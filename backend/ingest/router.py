@@ -2,7 +2,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from backend.config import CHUNK_SIZE, CHUNK_OVERLAP
 from backend.ingest.pdf_parser import extract_pdf_pages, chunk_pages
 from backend.llm import embed
-from backend.db.chroma_client import upsert_chunks
+from backend.db.chroma_client import upsert_chunks, clear_collection
 from backend.models.schemas import IngestResponse
 from backend.resume.prompts import UPLOAD_REJECTION
 from backend.resume.guardrails import is_resume_document
@@ -41,3 +41,9 @@ async def ingest_pdf(file: UploadFile = File(...)):
         return IngestResponse(doc_id=doc_id, chunks=len(chunks))
     finally:
         os.unlink(tmp_path)
+
+@router.delete("/reset")
+def reset_index():
+    """Clear the resume index (wipes stale/non-resume chunks)."""
+    deleted = clear_collection()
+    return {"ok": True, "deleted_chunks": deleted}

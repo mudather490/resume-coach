@@ -30,6 +30,14 @@ def upsert_chunks(doc_id: str, chunks: List[dict], embeddings: List[List[float]]
         documents=documents,
     )
 
+def clear_collection() -> int:
+    """Delete every indexed chunk (used by DELETE /ingest/reset)."""
+    client, collection = get_client()
+    ids = collection.get()["ids"]
+    if ids:
+        collection.delete(ids=ids)
+    return len(ids)
+
 def search(query_embedding: List[float], top_k: int = 5) -> List[dict]:
     client, collection = get_client()
     results = collection.query(

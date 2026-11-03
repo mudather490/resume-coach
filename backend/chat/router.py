@@ -4,11 +4,17 @@ from backend.llm import embed, chat
 from backend.db.chroma_client import search
 from backend.sessions.store import create_session, add_message, get_session
 from backend.models.schemas import ChatRequest, ChatResponse
-from backend.resume.prompts import COACH_SYSTEM_PROMPT, INTENT_TASKS, REFUSAL_ANSWER
+from backend.resume.prompts import (
+    COACH_SYSTEM_PROMPT,
+    INTENT_TASKS,
+    REFUSAL_ANSWER,
+    EMPTY_ANSWER_FALLBACK,
+)
 from backend.resume.guardrails import (
     is_resume_related,
     classify_intent,
     sanitize_for_fence,
+    strip_dismissive_preamble,
 )
 
 router = APIRouter()
@@ -53,6 +59,7 @@ async def chat_endpoint(req: ChatRequest):
             }
         )
         answer = chat(messages)
+        answer = strip_dismissive_preamble(answer) or EMPTY_ANSWER_FALLBACK
         sources = [{"doc_id": r["doc_id"], "page": r["page"], "score": r["score"]} for r in results]
 
     add_message(session_id, "user", req.message)

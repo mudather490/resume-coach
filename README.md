@@ -81,6 +81,7 @@ Set in `backend/.env`:
 ## Endpoints
 
 - POST /ingest — upload a resume PDF (non-resumes are rejected)
+- DELETE /ingest/reset — clear the resume index (e.g. to remove pre-gate documents)
 - POST /chat — talk to the coach, optional `intent` field: `review | expand | shorten | general | auto`
 - GET /sessions/{id} — conversation history
 - GET /sessions — list sessions

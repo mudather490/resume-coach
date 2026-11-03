@@ -113,6 +113,39 @@ Reply with exactly one letter."""
 
 MAX_CLASSIFIER_HISTORY_CHARS = 600
 MAX_DOC_EXCERPT_CHARS = 6000
+MAX_META_SENTENCES = 4
+
+STRUCTURED_RE = re.compile(r"^\s*(?:[-*•‣]|[0-9]+[.)]|#+|>\s)", re.M)
+
+META_OPENERS_RE = re.compile(
+    r"^\s*("
+    r"i\s+(?:don'?t|do\s+not)\s+know\b"
+    r"|i\s+(?:am\s+not\s+sure|cannot|can'?t)\s+(?:find|determinate|tell)\b"
+    r"|the\s+(?:provided|given)?\s*context\b"
+    r"|there\s+(?:is|are)\s+no\s+(?:mention|information|details?)\b"
+    r"|as\s+an\s+ai\b"
+    r"|based\s+on\s+the\s+context\b"
+    r")",
+    re.I,
+)
+
+
+def strip_dismissive_preamble(answer: str) -> str:
+    """Layer-3 reply screen: drop meta sentences like 'I don't know. The provided
+    context...' so the reply opens with the actual work instead (see the
+    ResumeAI-style research note: a reply screen catches what the prompt is
+    talked past). Only plain prose is touched; bullet/heading replies are kept."""
+    text = answer.strip()
+    if not text or STRUCTURED_RE.search(text[:80]):
+        return text
+    for _ in range(MAX_META_SENTENCES):
+        m = re.search(r"\s*(.{1,260}?[.!?])(\s+|$)", text, re.S)
+        if not m or not META_OPENERS_RE.search(m.group(1)):
+            break
+        text = text[m.end():].strip()
+        if not text or STRUCTURED_RE.search(text[:80]):
+            break
+    return text
 
 
 def sanitize_for_fence(text: str) -> str:
