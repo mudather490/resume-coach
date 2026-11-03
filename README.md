@@ -89,18 +89,30 @@ Set in `backend/.env`:
 ## Deploying to Vercel
 
 Vercel hosts the **frontend only**. The FastAPI backend needs a server with a
-persistent disk for ChromaDB (it runs fine on Railway, Render, Fly.io or a VM —
-not on Vercel serverless).
+persistent disk for ChromaDB — it cannot run on Vercel serverless (use Railway,
+Render, Fly.io or a VM for the backend).
 
-1. Deploy `frontend/` to Vercel. Set env var `NEXT_PUBLIC_API_BASE` to your
-   backend's public URL (e.g. `https://your-backend.up.railway.app`).
-2. On the backend host, set:
-   - `FRONTEND_URL=https://your-app.vercel.app` (CORS)
-   - `LLM_PROVIDER=gemini` + `GEMINI_API_KEY` (no local Ollama on a server)
-   - `CHROMA_PATH=/data/chroma_db` (a mounted/persistent volume)
+### 1. Deploy the frontend to Vercel (dashboard)
 
-## Vercel note
+1. Go to https://vercel.com/new and **Import** the GitHub repo `mudather490/resume-coach`.
+2. Under **Build & Output Settings → Root Directory**, set `frontend`
+   (the repo root has no package.json; the Next.js app lives in `frontend/`).
+   Framework preset auto-detects as **Next.js**.
+3. Add the environment variable:
+   - `NEXT_PUBLIC_API_BASE` = your backend's public URL (e.g. `https://your-backend.up.railway.app`)
+4. Click **Deploy**. Every push to `main` of GitHub re-deploys automatically.
 
-ChromaDB and Ollama run locally and cannot be hosted on Vercel serverless.
-For Vercel, use a hosted backend (persistent disk) + `LLM_PROVIDER=gemini`
-and deploy the Next.js frontend with `NEXT_PUBLIC_API_BASE` pointed at it.
+### 2. Host the backend (persistent disk required)
+
+On the backend host, set these environment vars:
+
+- `LLM_PROVIDER=gemini` + `GEMINI_API_KEY` (no local Ollama on a server —
+  get a key at https://aistudio.google.com/apikey)
+- `FRONTEND_URL=https://your-app.vercel.app` (CORS allowlist — accept the real
+  domains Vercel assigns, including the `-*.vercel.app` preview domains by
+  keeping the wildcard entry)
+- `CHROMA_PATH=/data/chroma_db` → **mount a persistent volume/disk** at that
+  path; anything under it survives restarts. Railway: Service → Volumes;
+  Render: Disk; Fly.io: `fly volumes`.
+
+If the volume works, uploaded resumes stay indexed across deploys and restarts.

@@ -9,6 +9,8 @@ app = FastAPI(title="RAG Chatbot", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[FRONTEND_URL, "http://localhost:3000"],
+    # Vercel assigns wildcard subdomains per deploy: app-name-team.vercel.app
+    allow_origin_regex=r"https://[a-z0-9-]+\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
