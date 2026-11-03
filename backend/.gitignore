@@ -1,0 +1,16 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Runtime data (your local docs, chats and DBs — do not upload)
+chroma_db/
+sessions.db
+
+# Secrets & logs
+.env
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

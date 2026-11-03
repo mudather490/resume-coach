@@ -1,0 +1,26 @@
+# Python
+backend/.venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local data (never commit user resumes or chat history)
+chroma_db/
+sessions.db
+*.db
+
+# Secrets
+backend/.env
+.env
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/tsconfig.tsbuildinfo
+
+# Editors & tooling
+.vscode/
+.DS_Store
+.Thumbs.db
+.vercel/
+*.log
