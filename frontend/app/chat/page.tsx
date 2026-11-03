@@ -194,9 +194,13 @@ export default function ChatPage() {
       ]);
       loadSessions();
     } catch (err: any) {
-      const detail =
-        err?.response?.data?.detail || "Could not get a response from the LLM provider.";
-      setMessages((prev) => [...prev, { role: "assistant", content: detail, error: true }]);
+      let detail = err?.response?.data?.detail as string | undefined;
+      if (!detail) {
+        detail = err?.response
+          ? "Could not get a response from the LLM provider. Check the backend log for details."
+          : `Backend unreachable (${err?.message || "network error"}). Start it with: uvicorn backend.main:app --reload --port 8000`;
+      }
+      setMessages((prev) => [...prev, { role: "assistant", content: detail!, error: true }]);
     } finally {
       setLoading(false);
     }

@@ -19,7 +19,6 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     get_client()
-
 from backend.ingest.router import router as ingest_router
 from backend.chat.router import router as chat_router
 from backend.sessions.router import router as sessions_router
@@ -34,4 +33,5 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    from backend.llm import provider_status
+    return {"status": "ok", **provider_status()}

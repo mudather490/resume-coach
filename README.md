@@ -67,16 +67,24 @@ Next.js frontend → FastAPI backend → LLM provider (embed/chat) → ChromaDB 
   Action + Context + Result / STAR bullets, strong action verbs, quantified achievements,
   no invented facts (missing numbers become `[placeholders]`), ATS-friendly formatting.
 
-## LLM providers
+## LLM providers: Local = Ollama · Vercel = Gemini
 
-Set in `backend/.env`:
+Local development uses **Ollama** (already the default) — nothing to configure.
 
-- **Ollama** (default, fully local): `LLM_PROVIDER=ollama` + `OLLAMA_HOST`, `OLLAMA_CHAT_MODEL`, `OLLAMA_EMBED_MODEL`
-- **Gemini** (hosted, for deployments without Ollama):
-  - Get a free API key: https://aistudio.google.com/apikey
-  - `LLM_PROVIDER=gemini`
-  - `GEMINI_API_KEY=your_key`
-  - Optional: `GEMINI_CHAT_MODEL` (default `gemini-2.5-flash`), `GEMINI_EMBED_MODEL` (default `text-embedding-004`)
+On a hosted backend (the Vercel flow), switch to **Gemini** by setting on the
+backend host:
+
+- `LLM_PROVIDER=gemini`
+- `GEMINI_API_KEY=your_key` (free: https://aistudio.google.com/apikey)
+- Optional: `GEMINI_CHAT_MODEL` (default `gemini-2.5-flash`), `GEMINI_EMBED_MODEL` (default `text-embedding-004`)
+
+Two conveniences:
+
+- **Auto-fallback**: with `LLM_PROVIDER=ollama` locally, if Ollama is not running
+  and a `GEMINI_API_KEY` is set in `backend/.env`, the backend silently uses
+  Gemini instead of failing.
+- **Self-diagnostics**: `GET /health` reports the active provider, whether
+  Ollama is reachable, and whether a Gemini key is configured.
 
 ## Endpoints
 

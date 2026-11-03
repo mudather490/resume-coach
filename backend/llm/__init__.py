@@ -1,8 +1,89 @@
-from backend.config import LLM_PROVIDER
+"""LLM provider resolution.
 
-if LLM_PROVIDER == "gemini":
-    from backend.llm.gemini_client import embed, chat
-else:
-    from backend.llm.ollama_client import embed, chat
+Local (default):      LLM_PROVIDER=ollama -> uses local Ollama; if Ollama is
+                      not reachable and GEMINI_API_KEY is set, falls back to
+                      Gemini automatically.
+Hosted (Vercel flow): LLM_PROVIDER=gemini + GEMINI_API_KEY on the backend host
+                      (no local Ollama on a server).
+"""
+from fastapi import HTTPException
 
-__all__ = ["embed", "chat"]
+from backend.config import GEMINI_API_KEY, LLM_PROVIDER
+
+
+def _ollama():
+    from backend.llm import ollama_client as module
+    return module
+
+
+def _gemini():
+    from backend.llm import gemini_client as module
+    return module
+
+
+NO_PROVIDER_DETAIL = (
+    "No LLM provider is available. Fix with ONE of:\n"
+    "1. Start Ollama:  ollama serve  (models: ollama list)\n"
+    "2. Or set in backend/.env:  LLM_PROVIDER=gemini  and  GEMINI_API_KEY=your_key"
+)
+
+NO_LLM_DETAIL = (
+    "The chat request failed on the active LLM provider.\n"
+    "Local: start Ollama with  ollama serve  and set OLLAMA_CHAT_MODEL in backend/.env to a "
+    "pulled model (ollama pull llama3.2:3b).\n"
+    "Cloud: set  LLM_PROVIDER=gemini  +  GEMINI_API_KEY=your_key  in backend/.env."
+)
+
+
+def _fusing_gemini() -> bool:
+    return LLM_PROVIDER == "gemini"
+
+
+def ollama_reachable() -> bool:
+    try:
+        _ollama().is_reachable()
+        return True
+    except Exception:
+        return False
+
+
+def provider_status() -> dict:
+    return {
+        "config_provider": LLM_PROVIDER,
+        "active_provider": "gemini" if _fusing_gemini() else "ollama",
+        "ollama_reachable": ollama_reachable(),
+        "gemini_key_set": bool(GEMINI_API_KEY),
+    }
+
+
+def embed(texts: list[str]) -> list[list[float]]:
+    if _fusing_gemini():
+        return _gemini().embed(texts)
+    if ollama_reachable():
+        try:
+            return _ollama().embed(texts)
+        except HTTPException:
+            if GEMINI_API_KEY:
+                return _gemini().embed(texts)
+            raise
+    if GEMINI_API_KEY:
+        return _gemini().embed(texts)
+    raise HTTPException(status_code=503, detail=NO_PROVIDER_DETAIL)
+
+
+def chat(messages: list[dict], temperature: float = 0.3) -> str:
+    if _fusing_gemini():
+        return _gemini().chat(messages, temperature)
+    if ollama_reachable():
+        try:
+            return _ollama().chat(messages, temperature)
+        except HTTPException:
+            if GEMINI_API_KEY:
+                return _gemini().chat(messages, temperature)
+            raise HTTPException(status_code=502, detail=NO_LLM_DETAIL)
+    if GEMINI_API_KEY:
+        return _gemini().chat(messages, temperature)
+    raise HTTPException(status_code=503, detail=NO_PROVIDER_DETAIL)
+
+
+__all__ = ["embed", "chat", "provider_status", "ollama_reachable"]
