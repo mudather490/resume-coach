@@ -1,13 +1,16 @@
 "use client";
 
 import { useState, useEffect, useRef, FormEvent, KeyboardEvent } from "react";
+import Link from "next/link";
 import {
-  createSession,
   chat,
   getSession,
   listSessions,
   deleteSession,
+  getIngestStatus,
   type ChatResponse,
+  type ChatKind,
+  type IngestStatus,
   type SessionListItem,
   type ChatIntent,
 } from "@/lib/api";
@@ -15,8 +18,8 @@ import {
   Bot,
   Send,
   Plus,
-  Sparkles,
   ChevronDown,
+  ChevronRight,
   AlertCircle,
   History,
   Trash2,
@@ -25,6 +28,9 @@ import {
   ListChecks,
   Maximize2,
   Minimize2,
+  FileText,
+  FileUp,
+  CornerDownLeft,
 } from "lucide-react";
 
 type Source = { doc_id: string; page: number | null; score: number };
@@ -33,35 +39,41 @@ type Message = {
   content: string;
   sources?: Source[];
   error?: boolean;
+  kind?: ChatKind;
 };
-
-const SESSION_KEY = "rag_session_id";
 
 const QUICK_ACTIONS: Array<{
   label: string;
+  description: string;
   message: string;
   intent: ChatIntent;
   icon: typeof ListChecks;
 }> = [
   {
     label: "Review & develop",
+    description: "Get a verdict plus concrete improvements and what to add next.",
     message: "Review my resume and give me concrete suggestions on how to develop it further.",
     intent: "review",
     icon: ListChecks,
   },
   {
     label: "Expand content",
+    description: "Turn thin bullets into detailed STAR accomplishments.",
     message: "Expand and enrich my resume bullet points with more detail.",
     intent: "expand",
     icon: Maximize2,
   },
   {
     label: "Shorten content",
+    description: "Tighten the resume for a clean, one-page layout.",
     message: "Shorten my resume content and make it tighter for a one-page layout.",
     intent: "shorten",
     icon: Minimize2,
   },
 ];
+
+const NO_RESUME_UI =
+  "Upload a resume PDF first — then I can review, expand, or shorten it right away.";
 
 function formatSessionDate(iso: string): string {
   const d = new Date(iso.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(iso) ? iso : iso + "Z");
@@ -80,16 +92,19 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [initError, setInitError] = useState(false);
   const [openSources, setOpenSources] = useState<Record<number, boolean>>({});
   const [showHistory, setShowHistory] = useState(false);
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [loadingSession, setLoadingSession] = useState(false);
+  const [resume, setResume] = useState<IngestStatus | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    initSession();
+    loadSessions();
+    refreshResume();
+    // Never restore an old conversation on open: always start a blank chat.
+    localStorage.removeItem("rag_session_id");
   }, []);
 
   useEffect(() => {
@@ -97,27 +112,11 @@ export default function ChatPage() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, loading]);
 
-  const initSession = async () => {
-    setInitError(false);
-    loadSessions();
+  const refreshResume = async () => {
     try {
-      const saved = localStorage.getItem(SESSION_KEY);
-      if (saved) {
-        const s = await getSession(saved);
-        setSessionId(s.id);
-        setMessages(s.messages);
-        return;
-      }
+      setResume(await getIngestStatus());
     } catch {
-      localStorage.removeItem(SESSION_KEY);
-    }
-    try {
-      const r = await createSession();
-      setSessionId(r.session_id);
-      localStorage.setItem(SESSION_KEY, r.session_id);
-      setMessages([]);
-    } catch {
-      setInitError(true);
+      setResume(null);
     }
   };
 
@@ -130,19 +129,14 @@ export default function ChatPage() {
     }
   };
 
-  const startNewChat = async () => {
+  const startNewChat = () => {
     if (loading) return;
-    try {
-      const r = await createSession();
-      setSessionId(r.session_id);
-      localStorage.setItem(SESSION_KEY, r.session_id);
-      setMessages([]);
-      setOpenSources({});
-      setShowHistory(false);
-      loadSessions();
-    } catch {
-      setInitError(true);
-    }
+    setSessionId(null);
+    setMessages([]);
+    setInput("");
+    setOpenSources({});
+    setShowHistory(false);
+    textareaRef.current?.focus();
   };
 
   const openPastSession = async (id: string) => {
@@ -151,7 +145,6 @@ export default function ChatPage() {
     try {
       const s = await getSession(id);
       setSessionId(s.id);
-      localStorage.setItem(SESSION_KEY, s.id);
       setMessages(s.messages);
       setOpenSources({});
       setShowHistory(false);
@@ -168,9 +161,7 @@ export default function ChatPage() {
     try {
       await deleteSession(id);
       setSessions((prev) => prev.filter((x) => x.id !== id));
-      if (id === sessionId) {
-        await startNewChat();
-      }
+      if (id === sessionId) startNewChat();
     } catch {
       setSessions((prev) => prev.filter((x) => x.id !== id));
     }
@@ -182,16 +173,35 @@ export default function ChatPage() {
   };
 
   const send = async (text: string, intent?: ChatIntent) => {
-    if (!sessionId || loading || !text.trim()) return;
-    setMessages((prev) => [...prev, { role: "user", content: text }]);
-    setLoading(true);
+    const clean = text.trim();
+    if (!clean || loading) return;
 
-    try {
-      const res: ChatResponse = await chat(text, sessionId, intent);
+    if (resume && !resume.has_resume) {
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: res.answer, sources: res.sources },
+        { role: "assistant", content: NO_RESUME_UI, kind: "no_resume" },
       ]);
+      setOpenSources({});
+      return;
+    }
+
+    setMessages((prev) => [...prev, { role: "user", content: clean }]);
+    setLoading(true);
+    setOpenSources({});
+
+    try {
+      const res: ChatResponse = await chat(clean, sessionId ?? undefined, intent);
+      setSessionId(res.session_id);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: res.answer,
+          sources: res.sources,
+          kind: res.kind,
+        },
+      ]);
+      if (res.kind === "no_resume") refreshResume();
       loadSessions();
     } catch (err: any) {
       let detail = err?.response?.data?.detail as string | undefined;
@@ -219,6 +229,15 @@ export default function ChatPage() {
     send(action.message, action.intent);
   };
 
+  const insertIntoInput = (text: string) => {
+    setInput(text);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      const el = textareaRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+  };
+
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -226,9 +245,11 @@ export default function ChatPage() {
     }
   };
 
+  const noResume = !!resume && !resume.has_resume;
+
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <h1 className="text-lg font-semibold text-slate-900">Resume Coach</h1>
         <div className="flex items-center gap-2">
           <button
@@ -253,6 +274,21 @@ export default function ChatPage() {
           </button>
         </div>
       </div>
+
+      {resume?.has_resume && (
+        <div className="mb-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 shadow-sm">
+          <FileText size={14} className="shrink-0 text-indigo-600" />
+          <span className="truncate font-medium text-slate-700">{resume.filename}</span>
+          <span className="text-slate-300">·</span>
+          <span className="shrink-0">{resume.chunks} chunks</span>
+          <Link
+            href="/upload"
+            className="ml-auto shrink-0 font-medium text-indigo-600 hover:text-indigo-700"
+          >
+            Replace
+          </Link>
+        </div>
+      )}
 
       {showHistory && (
         <div className="mb-4 border border-slate-200 rounded-2xl bg-white shadow-sm overflow-hidden max-h-72 overflow-y-auto">
@@ -304,64 +340,77 @@ export default function ChatPage() {
                 </div>
               ))}
             </div>
-           )}
+          )}
         </div>
       )}
 
-      <div className="border border-slate-200 rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col h-[calc(100vh-180px)] min-h-[420px]">
+      <div className="border border-slate-200 rounded-2xl bg-white shadow-sm overflow-hidden flex flex-col h-[calc(100vh-205px)] min-h-[420px]">
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 space-y-4">
-          {initError ? (
-            <div className="h-full flex flex-col items-center justify-center gap-3">
-              <AlertCircle className="text-rose-500" size={32} />
-              <p className="text-sm text-slate-600">
-                Could not start a chat session. Is the backend running?
-              </p>
-              <button
-                onClick={initSession}
-                className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
-              >
-                Try again
-              </button>
-            </div>
-          ) : !sessionId ? (
-            <div className="h-full flex items-center justify-center">
-              <div className="flex items-center gap-2 text-slate-400 text-sm">
-                <Sparkles size={16} className="animate-pulse" />
-                Starting session...
-              </div>
-            </div>
-          ) : messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center gap-4 px-8">
+          {messages.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center gap-5 px-4">
               <div className="h-14 w-14 rounded-2xl bg-indigo-50 flex items-center justify-center">
                 <Bot size={26} className="text-indigo-600" />
               </div>
               <div>
-                <p className="font-medium text-slate-900">Your resume coach is ready</p>
-                <p className="mt-1.5 text-sm text-slate-500 leading-relaxed">
-                  Upload your resume as a PDF, then ask me to review it, develop it further,
-                  expand or shorten its content. Anything unrelated to resumes is declined.
+                <p className="text-lg font-medium text-slate-900">
+                  How should I work on your resume?
+                </p>
+                <p className="mt-1.5 text-sm text-slate-500 leading-relaxed max-w-md">
+                  Pick a mode to start. Your coach only uses the resume PDF you upload.
                 </p>
               </div>
-              {!loading && (
-                <div className="flex flex-wrap justify-center gap-2">
-                  {QUICK_ACTIONS.map((action) => (
-                    <button
-                      key={action.intent}
-                      onClick={() => handleQuickAction(action)}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-white border border-slate-200 text-xs font-medium text-slate-600 hover:border-indigo-300 hover:text-indigo-700 hover:bg-indigo-50 shadow-sm transition-all"
+
+              {noResume && (
+                <div className="w-full max-w-md flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-left">
+                  <AlertCircle size={16} className="mt-0.5 shrink-0 text-amber-600" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-amber-900">No resume uploaded yet</p>
+                    <p className="mt-0.5 text-xs text-amber-800/80">
+                      Upload a PDF first, then review, expand, or shorten it.
+                    </p>
+                    <Link
+                      href="/upload"
+                      className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-amber-900 underline underline-offset-2 hover:text-amber-700"
                     >
-                      <action.icon size={13} />
-                      {action.label}
-                    </button>
-                  ))}
+                      <FileUp size={13} />
+                      Upload resume
+                    </Link>
+                  </div>
                 </div>
               )}
+
+              <div className="w-full max-w-md space-y-2">
+                {QUICK_ACTIONS.map((action) => (
+                  <button
+                    key={action.intent}
+                    onClick={() => handleQuickAction(action)}
+                    disabled={loading}
+                    className="w-full flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-left shadow-sm hover:border-indigo-300 hover:bg-indigo-50/40 transition-all disabled:opacity-50 group"
+                  >
+                    <span className="h-9 w-9 shrink-0 rounded-lg bg-indigo-50 flex items-center justify-center">
+                      <action.icon size={17} className="text-indigo-600" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-slate-900">
+                        {action.label}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-slate-500 leading-relaxed">
+                        {action.description}
+                      </span>
+                    </span>
+                    <ChevronRight
+                      size={16}
+                      className="shrink-0 text-slate-300 group-hover:text-indigo-500"
+                    />
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             messages.map((m, i) =>
               m.role === "user" ? (
                 <div key={i} className="flex justify-end items-center gap-2 group/msg-user">
-                  <CopyButton text={m.content} pendingClass="opacity-0 group-hover/msg-user:opacity-100" />
+                  <CopyButton text={m.content} compact />
                   <div className="max-w-[80%] bg-indigo-600 text-white rounded-2xl rounded-br-md px-4 py-2.5 shadow-sm whitespace-pre-wrap break-words">
                     {m.content}
                   </div>
@@ -371,7 +420,7 @@ export default function ChatPage() {
                   <div className="h-8 w-8 shrink-0 rounded-full bg-indigo-50 flex items-center justify-center mt-0.5">
                     <Bot size={17} className={m.error ? "text-rose-600" : "text-indigo-600"} />
                   </div>
-                  <div className="min-w-0 max-w-[85%] space-y-2">
+                  <div className="min-w-0 max-w-[85%] space-y-1.5">
                     <div
                       className={`rounded-2xl rounded-tl-md px-4 py-2.5 shadow-sm whitespace-pre-wrap break-words ${
                         m.error
@@ -384,6 +433,14 @@ export default function ChatPage() {
                     {!m.error && (
                       <div className="flex flex-wrap items-center gap-1.5">
                         <CopyButton text={m.content} />
+                        <button
+                          onClick={() => insertIntoInput(m.content)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-slate-50 border border-slate-200 text-[11px] font-medium text-slate-500 hover:text-indigo-700 hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
+                          title="Insert this answer into the message box"
+                        >
+                          <CornerDownLeft size={12} />
+                          Insert
+                        </button>
                         {m.sources && m.sources.length > 0 && (
                           <>
                             <button
@@ -399,7 +456,7 @@ export default function ChatPage() {
                               />
                             </button>
                             {openSources[i] && (
-                              <div className="flex flex-wrap gap-1.5">
+                              <div className="flex flex-wrap gap-1.5 w-full">
                                 {m.sources.map((s, j) => (
                                   <span
                                     key={j}
@@ -416,6 +473,15 @@ export default function ChatPage() {
                           </>
                         )}
                       </div>
+                    )}
+                    {(m.kind === "no_resume" || m.kind === "not_found") && (
+                      <Link
+                        href="/upload"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-xs font-medium text-amber-900 hover:bg-amber-100 transition-colors"
+                      >
+                        <FileUp size={13} />
+                        Upload a resume PDF
+                      </Link>
                     )}
                   </div>
                 </div>
@@ -443,7 +509,7 @@ export default function ChatPage() {
               <button
                 key={action.intent}
                 onClick={() => handleQuickAction(action)}
-                disabled={!sessionId || loading}
+                disabled={loading}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-[11px] font-medium text-slate-600 hover:border-indigo-300 hover:text-indigo-700 hover:bg-indigo-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <action.icon size={12} />
@@ -460,7 +526,7 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={!sessionId || loading}
+              disabled={loading}
             />
             <button
               type="submit"
@@ -472,7 +538,7 @@ export default function ChatPage() {
             </button>
           </form>
           <p className="mt-2 px-1 text-[11px] text-slate-400">
-            Shift + Enter for a new line
+            Shift + Enter for a new line · Answers come only from your uploaded resume
           </p>
         </div>
       </div>
@@ -489,13 +555,7 @@ function Dot({ className, delay }: { className?: string; delay: string }) {
   );
 }
 
-function CopyButton({
-  text,
-  pendingClass = "opacity-70 hover:opacity-100",
-}: {
-  text: string;
-  pendingClass?: string;
-}) {
+function CopyButton({ text, compact = false }: { text: string; compact?: boolean }) {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -516,18 +576,36 @@ function CopyButton({
     setTimeout(() => setCopied(false), 1500);
   };
 
+  if (compact) {
+    return (
+      <button
+        onClick={copy}
+        className={`shrink-0 h-6 w-6 rounded-md flex items-center justify-center transition-all opacity-100 md:opacity-0 md:group-hover/msg-user:opacity-100 focus:opacity-100 ${
+          copied
+            ? "text-emerald-600 opacity-100"
+            : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+        }`}
+        aria-label="Copy message"
+        title={copied ? "Copied" : "Copy"}
+      >
+        {copied ? <Check size={13} /> : <Copy size={13} />}
+      </button>
+    );
+  }
+
   return (
     <button
       onClick={copy}
-      className={`shrink-0 h-6 w-6 rounded-md flex items-center justify-center transition-all ${
+      className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border text-[11px] font-medium transition-colors ${
         copied
-          ? "text-emerald-600 opacity-100"
-          : `text-slate-400 hover:text-slate-700 hover:bg-slate-100 ${pendingClass}`
+          ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+          : "bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-700 hover:border-slate-300"
       }`}
       aria-label="Copy message"
       title={copied ? "Copied" : "Copy"}
     >
-      {copied ? <Check size={13} /> : <Copy size={13} />}
+      {copied ? <Check size={12} /> : <Copy size={12} />}
+      {copied ? "Copied" : "Copy"}
     </button>
   );
 }

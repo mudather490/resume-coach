@@ -14,7 +14,7 @@ to resumes is declined. Runs fully local on Windows without Docker.
 
 ```powershell
 ollama pull llama3.2:3b
-ollama pull nomic-embed-text
+ollama pull embeddinggemma:latest
 ```
 
 ## Start Ollama server
@@ -30,8 +30,8 @@ It serves on http://localhost:11434
 ```powershell
 cd E:\frist_rag
 copy backend\.env.example backend\.env
-python -m venv backend\.venv
-backend\.venv\Scripts\activate
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r backend\requirements.txt
 uvicorn backend.main:app --reload --port 8000
 ```
@@ -50,13 +50,20 @@ Open http://localhost:3000
 
 ## Architecture
 
-Next.js frontend → FastAPI backend → LLM provider (embed/chat) → ChromaDB (local vector store, ./chroma_db)
+Next.js frontend → FastAPI backend → LLM provider (chat) → active resume (./chroma_db/active_resume.json) + ChromaDB index built in the background
 
 ## Resume-specific behavior
 
-- **Upload gate** — `backend/resume/guardrails.py::is_resume_document` checks extracted
+- **Fast upload** — the PDF is parsed, checked, and saved immediately; embeddings are
+  generated in a background thread so the upload returns in well under a second.
+- **Upload gate** — `backend/resume/guardrails.py::is_resume_document_fast` checks extracted
   PDF text (section headings, contact info, education tokens, date ranges vs. paper/
   invoice markers). Non-resume PDFs are rejected with HTTP 400.
+- **Grounded answers** — the coach reads the whole active resume, not a search snippet.
+  Questions about facts that aren't in the resume return `kind: "not_found"` and prompt
+  the user to upload a different PDF; with no resume uploaded it returns `kind: "no_resume"`.
+- **Blank start** — `/chat` always opens a fresh conversation with the three mode cards;
+  earlier conversations stay under **Past chats**.
 - **Chat gate** — `is_resume_related` screens every message: a keyword allow/deny screen
   in Python first; ambiguous messages go to a one-letter LLM classifier. Off-topic requests
   get a "resume coach only" refusal and skip retrieval entirely.
@@ -88,9 +95,11 @@ Two conveniences:
 
 ## Endpoints
 
-- POST /ingest — upload a resume PDF (non-resumes are rejected)
+- POST /ingest — upload a resume PDF (non-resumes are rejected; replaces the active resume)
+- GET /ingest/status — active resume filename/chunk count, or `has_resume: false`
 - DELETE /ingest/reset — clear the resume index (e.g. to remove pre-gate documents)
-- POST /chat — talk to the coach, optional `intent` field: `review | expand | shorten | general | auto`
+- POST /chat — talk to the coach, optional `intent` field: `review | expand | shorten | general | auto`.
+  Responses include `kind`: `answer | refusal | no_resume | not_found`
 - GET /sessions/{id} — conversation history
 - GET /sessions — list sessions
 - GET /health

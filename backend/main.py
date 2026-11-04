@@ -1,3 +1,5 @@
+import threading
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
@@ -16,9 +18,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def _warm_embedding_model():
+    try:
+        from backend.llm import embed
+        embed(["warmup"])
+    except Exception:
+        # A missing model/provider is surfaced by /health and the first request.
+        pass
+
+
 @app.on_event("startup")
 def startup():
     get_client()
+    threading.Thread(target=_warm_embedding_model, daemon=True).start()
 from backend.ingest.router import router as ingest_router
 from backend.chat.router import router as chat_router
 from backend.sessions.router import router as sessions_router

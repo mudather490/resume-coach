@@ -10,13 +10,26 @@ export const api: AxiosInstance = axios.create({
 
 export interface IngestResponse {
   doc_id: string;
+  filename: string;
   chunks: number;
 }
+
+export interface IngestStatus {
+  has_resume: boolean;
+  doc_id?: string | null;
+  filename?: string | null;
+  chunks: number;
+  uploaded_at?: string | null;
+  indexed?: boolean;
+}
+
+export type ChatKind = "answer" | "refusal" | "no_resume" | "not_found";
 
 export interface ChatResponse {
   answer: string;
   sources: Array<{ doc_id: string; page: number | null; score: number }>;
   session_id: string;
+  kind?: ChatKind;
 }
 
 export interface Session {
@@ -31,6 +44,10 @@ export const ingestPdf = (file: File): Promise<IngestResponse> => {
   return api.post("/ingest", form, {
     headers: { "Content-Type": "multipart/form-data" },
   }).then((r) => r.data);
+};
+
+export const getIngestStatus = (): Promise<IngestStatus> => {
+  return api.get("/ingest/status").then((r) => r.data);
 };
 
 export type ChatIntent = "review" | "expand" | "shorten" | "general";

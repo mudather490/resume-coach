@@ -1,9 +1,24 @@
 "use client";
 
-import { useState, DragEvent, ChangeEvent, useRef } from "react";
+import { useState, useEffect, DragEvent, ChangeEvent, useRef } from "react";
 import Link from "next/link";
-import { ingestPdf, type IngestResponse } from "@/lib/api";
-import { FileUp, Loader2, CheckCircle2, AlertCircle, FileText, MessageCircle, Plus } from "lucide-react";
+import {
+  ingestPdf,
+  getIngestStatus,
+  type IngestResponse,
+  type IngestStatus,
+} from "@/lib/api";
+import {
+  FileUp,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  FileText,
+  MessageCircle,
+  Plus,
+} from "lucide-react";
+
+const MAX_UPLOAD_MB = 10;
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -17,12 +32,31 @@ export default function UploadPage() {
   const [result, setResult] = useState<IngestResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [current, setCurrent] = useState<IngestStatus | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    refreshStatus();
+  }, []);
+
+  const refreshStatus = async () => {
+    try {
+      setCurrent(await getIngestStatus());
+    } catch {
+      setCurrent(null);
+    }
+  };
 
   const pickFile = (f: File | undefined) => {
     if (!f) return;
-    if (!f.name.toLowerCase().endsWith(".pdf")) {
-      setError("Only PDF resumes are supported");
+    if (!f.name.toLowerCase().endsWith(".pdf") && f.type !== "application/pdf") {
+      setError("Only PDF resumes are supported. Choose a different file.");
+      setFile(null);
+      return;
+    }
+    if (f.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      setError(`That PDF is too large (max ${MAX_UPLOAD_MB} MB). Choose a smaller file.`);
+      setFile(null);
       return;
     }
     setFile(f);
@@ -51,8 +85,15 @@ export default function UploadPage() {
       const res: IngestResponse = await ingestPdf(file);
       setResult(res);
       setFile(null);
+      await refreshStatus();
     } catch (err: any) {
-      setError(err?.response?.data?.detail || "Upload failed");
+      const status = err?.response?.status;
+      setError(err?.response?.data?.detail || "Upload failed. Please try again.");
+      // A rejected file is useless here — clear it so the user can pick a new one.
+      if (status === 400 || status === 413) {
+        setFile(null);
+        if (inputRef.current) inputRef.current.value = "";
+      }
     } finally {
       setUploading(false);
     }
@@ -62,6 +103,7 @@ export default function UploadPage() {
     setFile(null);
     setResult(null);
     setError(null);
+    if (inputRef.current) inputRef.current.value = "";
   };
 
   return (
@@ -69,10 +111,22 @@ export default function UploadPage() {
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-slate-900">Upload your resume</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Resume/CV PDFs only — other documents are rejected. It is indexed right away
-          and ready for coaching.
+          Resume/CV PDFs only — other documents are rejected. A new upload replaces the
+          current resume and is indexed in a few seconds.
         </p>
       </div>
+
+      {current?.has_resume && (
+        <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-slate-200 bg-white px-3.5 py-3 shadow-sm">
+          <FileText size={16} className="mt-0.5 shrink-0 text-indigo-600" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-slate-900 truncate">{current.filename}</p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Active resume · {current.chunks} chunks. Uploading a new PDF replaces it.
+            </p>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div
@@ -89,13 +143,13 @@ export default function UploadPage() {
               : "border-slate-300 bg-white hover:border-indigo-300 hover:bg-indigo-50/40"
           }`}
         >
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".pdf,application/pdf"
-          className="hidden"
-          onChange={handleInputChange}
-        />
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".pdf,application/pdf"
+            className="hidden"
+            onChange={handleInputChange}
+          />
           {file ? (
             <div className="flex items-center justify-center gap-3">
               <div className="h-11 w-11 rounded-xl bg-rose-50 flex items-center justify-center shrink-0">
@@ -117,7 +171,9 @@ export default function UploadPage() {
                 <p className="text-sm font-medium text-slate-900">
                   Drop your resume PDF here, or <span className="text-indigo-600">browse</span>
                 </p>
-                <p className="mt-0.5 text-xs text-slate-400">Resume/CV PDF only · runs locally</p>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  Resume/CV PDF only · max {MAX_UPLOAD_MB} MB · runs locally
+                </p>
               </div>
             </div>
           )}
@@ -126,7 +182,16 @@ export default function UploadPage() {
         {error && (
           <div className="flex items-start gap-2 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-sm">
             <AlertCircle size={16} className="mt-0.5 shrink-0" />
-            {error}
+            <div>
+              <p>{error}</p>
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                className="mt-1.5 text-xs font-medium underline underline-offset-2 hover:text-rose-900"
+              >
+                Choose another PDF
+              </button>
+            </div>
           </div>
         )}
 
@@ -136,11 +201,11 @@ export default function UploadPage() {
               <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-600" />
               <div>
                 <p className="font-medium">
-                  {result.doc_id} indexed — {result.chunks} chunk
+                  {result.filename} saved — {result.chunks} chunk
                   {result.chunks > 1 ? "s" : ""}
                 </p>
                 <p className="mt-0.5 text-emerald-700/80 text-[13px]">
-                  Ready to go. Ask your coach to review it.
+                  Ready to go. Pick a mode and let your coach work on it.
                 </p>
               </div>
             </div>
@@ -172,12 +237,12 @@ export default function UploadPage() {
           {uploading ? (
             <>
               <Loader2 size={17} className="animate-spin" />
-              Indexing...
+              Saving resume...
             </>
           ) : (
             <>
               <FileUp size={17} />
-              Upload & Index
+              Save resume
             </>
           )}
         </button>

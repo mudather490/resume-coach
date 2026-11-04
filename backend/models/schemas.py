@@ -10,7 +10,16 @@ class Chunk(BaseModel):
 
 class IngestResponse(BaseModel):
     doc_id: str
+    filename: str
     chunks: int
+
+class IngestStatus(BaseModel):
+    has_resume: bool
+    doc_id: Optional[str] = None
+    filename: Optional[str] = None
+    chunks: int = 0
+    uploaded_at: Optional[str] = None
+    indexed: bool = False
 
 class ChatRequest(BaseModel):
     message: str
@@ -21,6 +30,7 @@ class ChatResponse(BaseModel):
     answer: str
     sources: List[dict]
     session_id: str
+    kind: str = "answer"  # answer | refusal | no_resume | not_found
 
 class Session(BaseModel):
     id: str
