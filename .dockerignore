@@ -1,0 +1,16 @@
+.git
+.venv
+venv
+__pycache__
+**/__pycache__
+*.pyc
+frontend
+node_modules
+chroma_db
+sessions.db
+*.log
+.env
+backend/.env
+.vscode
+Dockerfile
+.dockerignore

@@ -5,6 +5,8 @@ import Link from "next/link";
 import {
   ingestPdf,
   getIngestStatus,
+  backendUnreachableMessage,
+  isNetworkError,
   type IngestResponse,
   type IngestStatus,
 } from "@/lib/api";
@@ -88,7 +90,11 @@ export default function UploadPage() {
       await refreshStatus();
     } catch (err: any) {
       const status = err?.response?.status;
-      setError(err?.response?.data?.detail || "Upload failed. Please try again.");
+      setError(
+        isNetworkError(err)
+          ? backendUnreachableMessage(err)
+          : err?.response?.data?.detail || "Upload failed. Please try again."
+      );
       // A rejected file is useless here — clear it so the user can pick a new one.
       if (status === 400 || status === 413) {
         setFile(null);
@@ -112,7 +118,7 @@ export default function UploadPage() {
         <h1 className="text-xl font-semibold text-slate-900">Upload your resume</h1>
         <p className="mt-1 text-sm text-slate-500">
           Resume/CV PDFs only — other documents are rejected. A new upload replaces the
-          current resume and is indexed in a few seconds.
+          current resume and replaces it immediately.
         </p>
       </div>
 
@@ -172,7 +178,7 @@ export default function UploadPage() {
                   Drop your resume PDF here, or <span className="text-indigo-600">browse</span>
                 </p>
                 <p className="mt-0.5 text-xs text-slate-400">
-                  Resume/CV PDF only · max {MAX_UPLOAD_MB} MB · runs locally
+                  Resume/CV PDF only · max {MAX_UPLOAD_MB} MB
                 </p>
               </div>
             </div>

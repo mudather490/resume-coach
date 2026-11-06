@@ -1,16 +1,27 @@
+"""Conversation history.
+
+Local development: SQLite (``sessions.db`` at the repo root by default).
+Vercel: Upstash Redis, selected automatically when its REST env vars exist
+(Vercel's filesystem is ephemeral).
+"""
 import os
 import sqlite3
 import uuid
 from datetime import datetime
 from typing import List, Optional
 
-_DB_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.getenv("SESSIONS_DB_PATH", os.path.abspath(os.path.join(_DB_DIR, "..", "..", "sessions.db")))
+from backend.config import SESSIONS_DB_PATH, USE_KV
+from backend.db import store as state
+
+DB_PATH = SESSIONS_DB_PATH
+
 
 def _conn():
+    os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
 
 def init_db():
     conn = _conn()
@@ -33,7 +44,10 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 def create_session() -> str:
+    if USE_KV:
+        return state.kv_create_session()
     init_db()
     sid = str(uuid.uuid4())
     conn = _conn()
@@ -42,7 +56,11 @@ def create_session() -> str:
     conn.close()
     return sid
 
+
 def add_message(session_id: str, role: str, content: str):
+    if USE_KV:
+        state.kv_add_message(session_id, role, content)
+        return
     init_db()
     conn = _conn()
     conn.execute("INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
@@ -50,11 +68,15 @@ def add_message(session_id: str, role: str, content: str):
     conn.commit()
     conn.close()
 
+
 def get_session(session_id: str) -> Optional[dict]:
+    if USE_KV:
+        return state.kv_get_session(session_id)
     init_db()
     conn = _conn()
     row = conn.execute("SELECT id, created_at FROM sessions WHERE id = ?", (session_id,)).fetchone()
     if not row:
+        conn.close()
         return None
     msgs = conn.execute("SELECT role, content FROM messages WHERE session_id = ? ORDER BY id", (session_id,)).fetchall()
     conn.close()
@@ -64,7 +86,10 @@ def get_session(session_id: str) -> Optional[dict]:
         "messages": [{"role": m["role"], "content": m["content"]} for m in msgs],
     }
 
+
 def list_sessions() -> List[dict]:
+    if USE_KV:
+        return state.kv_list_sessions()
     init_db()
     conn = _conn()
     rows = conn.execute(
@@ -80,7 +105,10 @@ def list_sessions() -> List[dict]:
     conn.close()
     return [{"id": r["id"], "created_at": r["created_at"], "title": r["title"]} for r in rows]
 
+
 def delete_session(session_id: str) -> bool:
+    if USE_KV:
+        return state.kv_delete_session(session_id)
     init_db()
     conn = _conn()
     row = conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()

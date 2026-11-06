@@ -37,7 +37,7 @@ export default function Home() {
       <section className="text-center py-16 sm:py-20">
         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-medium">
           <Lock size={13} />
-          Fully local — ChromaDB + Ollama
+          Fully local with Ollama · Gemini when hosted
         </span>
         <h1 className="mt-6 text-4xl sm:text-5xl font-bold tracking-tight text-slate-900 leading-tight">
           Your private
@@ -47,7 +47,6 @@ export default function Home() {
         <p className="mt-5 text-lg text-slate-600 leading-relaxed">
           Upload your resume PDF and chat with a coach whose only job is developing
           it — review, expand, shorten. Anything unrelated to resumes is declined.
-          Nothing leaves your machine.
         </p>
         <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
           <Link

@@ -41,7 +41,9 @@ engineers, $40K budget. Always numerals (2 not two; 50+ and 100K for estimates).
 - No personal pronouns. Present tense for the current role, past tense for previous roles.
 - Keep it ATS-friendly: standard headings (Summary, Experience, Education, Skills), no tables or \
 graphics, full terms with abbreviations in parentheses, e.g. "Search Engine Optimization (SEO)".
-- Reply in concise markdown. Show rewrites as "Before: ... / After: ..."."""
+- Format with Markdown. Put each section title on its own line as a ## heading; use **bold** for \
+inline emphasis. Never wrap titles, words or examples in quotation marks - use bold instead.
+- Show rewrites as Before: ... / After: ... with no quotation marks."""
 
 INTENT_TASKS = {
     "review": (

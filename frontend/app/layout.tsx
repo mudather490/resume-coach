@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { MessageCircle, FileUp, Sparkles } from "lucide-react";
+import BackendBanner from "@/components/BackendBanner";
 import "./globals.css";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -32,9 +33,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </nav>
-        <main className="flex-1 w-full">{children}</main>
+        <BackendBanner />
+        <main className="flex-1 w-full flex flex-col min-h-0">{children}</main>
         <footer className="py-6 text-center text-xs text-slate-400">
-          Resume Coach — 100% local. Your resume and answers never leave your machine.
+          Resume Coach — answers grounded in your resume.
         </footer>
       </body>
     </html>

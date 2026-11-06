@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.config import REVIEW_CONTEXT_CHARS
 from backend.llm import chat
-from backend.db.chroma_client import get_active_doc, get_document_chunks
+from backend.db.store import get_active_doc, get_document_chunks
 from backend.sessions.store import create_session, add_message, get_session
 from backend.models.schemas import ChatRequest, ChatResponse
 from backend.resume.prompts import (

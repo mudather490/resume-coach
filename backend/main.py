@@ -1,9 +1,17 @@
-import threading
+import os
+import sys
+
+# Vercel's FastAPI service uses `entrypoint: main:app` with the backend/ folder
+# as its root, while local development uses `uvicorn backend.main:app` from the
+# repo root. Put the repo root on sys.path so the same `backend.*` imports work
+# in both cases.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
-from backend.db.chroma_client import get_client
 from backend.config import FRONTEND_URL
 
 app = FastAPI(title="RAG Chatbot", version="0.1.0")
@@ -18,19 +26,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def _warm_embedding_model():
-    try:
-        from backend.llm import embed
-        embed(["warmup"])
-    except Exception:
-        # A missing model/provider is surfaced by /health and the first request.
-        pass
-
-
-@app.on_event("startup")
-def startup():
-    get_client()
-    threading.Thread(target=_warm_embedding_model, daemon=True).start()
 from backend.ingest.router import router as ingest_router
 from backend.chat.router import router as chat_router
 from backend.sessions.router import router as sessions_router

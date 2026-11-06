@@ -39,6 +39,19 @@ def _fusing_gemini() -> bool:
     return LLM_PROVIDER == "gemini"
 
 
+def _preserve(exc: HTTPException) -> HTTPException:
+    """Re-raise the provider's real error instead of masking it.
+
+    The previous implementation replaced every Ollama failure (wrong model,
+    timeout, out-of-memory, ...) with the generic NO_LLM_DETAIL message, which
+    hid the actual cause. Only fall back to the generic hint when the provider
+    gave us no detail at all.
+    """
+    detail = getattr(exc, "detail", None) or NO_LLM_DETAIL
+    status = getattr(exc, "status_code", None) or 502
+    return HTTPException(status_code=status, detail=detail)
+
+
 def ollama_reachable() -> bool:
     try:
         _ollama().is_reachable()
@@ -62,10 +75,10 @@ def embed(texts: list[str]) -> list[list[float]]:
     if ollama_reachable():
         try:
             return _ollama().embed(texts)
-        except HTTPException:
+        except HTTPException as e:
             if GEMINI_API_KEY:
                 return _gemini().embed(texts)
-            raise
+            raise _preserve(e)
     if GEMINI_API_KEY:
         return _gemini().embed(texts)
     raise HTTPException(status_code=503, detail=NO_PROVIDER_DETAIL)
@@ -77,10 +90,10 @@ def chat(messages: list[dict], temperature: float = 0.3) -> str:
     if ollama_reachable():
         try:
             return _ollama().chat(messages, temperature)
-        except HTTPException:
+        except HTTPException as e:
             if GEMINI_API_KEY:
                 return _gemini().chat(messages, temperature)
-            raise HTTPException(status_code=502, detail=NO_LLM_DETAIL)
+            raise _preserve(e)
     if GEMINI_API_KEY:
         return _gemini().chat(messages, temperature)
     raise HTTPException(status_code=503, detail=NO_PROVIDER_DETAIL)

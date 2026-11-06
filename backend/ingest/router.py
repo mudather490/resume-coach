@@ -1,6 +1,5 @@
 import os
 import tempfile
-import threading
 import time
 from datetime import datetime
 
@@ -8,10 +7,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 
 from backend.config import CHUNK_SIZE, CHUNK_OVERLAP, MAX_UPLOAD_MB
 from backend.ingest.pdf_parser import extract_pdf_pages, chunk_pages
-from backend.llm import embed
-from backend.db.chroma_client import (
-    upsert_chunks,
-    clear_collection,
+from backend.db.store import (
     clear_active_doc,
     set_active_doc,
     get_active_doc,
@@ -30,29 +26,6 @@ def _chunk_count(meta: dict) -> int:
     if isinstance(chunks, int):
         return chunks
     return int(meta.get("chunk_count") or 0)
-
-
-def _index_resume_background(doc_id: str, chunks: list, uploaded_at: str):
-    """Embed + store in ChromaDB without blocking the upload response.
-
-    Chat reads the resume text straight from active_resume.json, so coaching
-    works immediately even while this job is still running.
-    """
-    try:
-        current = get_active_doc()
-        if not current or current.get("uploaded_at") != uploaded_at:
-            return
-        embeddings = embed([c["text"] for c in chunks])
-        current = get_active_doc()
-        if not current or current.get("uploaded_at") != uploaded_at:
-            return
-        clear_collection()
-        upsert_chunks(doc_id, chunks, embeddings)
-        current["indexed"] = True
-        set_active_doc(current)
-        print(f"[ingest] background index {doc_id}: {len(chunks)} chunks")
-    except Exception as e:
-        print(f"[ingest] background indexing failed for {doc_id}: {e}")
 
 
 @router.post("", response_model=IngestResponse)
@@ -87,25 +60,22 @@ async def ingest_pdf(file: UploadFile = File(...)):
         if not chunks:
             raise HTTPException(status_code=400, detail="No text extracted from PDF")
 
-        uploaded_at = datetime.utcnow().isoformat()
+        # The chunk text is stored inside the active-document metadata: chat
+        # sends the whole resume as context, so a separate vector index (and
+        # the embeddings it needs) is not required. This also keeps uploads
+        # fast and works inside a stateless serverless function.
         meta = {
             "doc_id": doc_id,
             "filename": doc_id,
             "chunk_count": len(chunks),
             "chunks": [{"text": c["text"], "page": c["page"]} for c in chunks],
-            "uploaded_at": uploaded_at,
-            "indexed": False,
+            "uploaded_at": datetime.utcnow().isoformat(),
+            "indexed": True,
         }
         set_active_doc(meta)
 
-        threading.Thread(
-            target=_index_resume_background,
-            args=(doc_id, chunks, uploaded_at),
-            daemon=True,
-        ).start()
-
         elapsed = time.perf_counter() - started
-        print(f"[ingest] {doc_id}: saved {len(chunks)} chunks in {elapsed:.2f}s (indexing in background)")
+        print(f"[ingest] {doc_id}: saved {len(chunks)} chunks in {elapsed:.2f}s")
         return IngestResponse(doc_id=doc_id, filename=doc_id, chunks=len(chunks))
     finally:
         os.unlink(tmp_path)
@@ -122,13 +92,14 @@ def ingest_status():
         filename=meta.get("filename") or meta.get("doc_id"),
         chunks=_chunk_count(meta),
         uploaded_at=meta.get("uploaded_at"),
-        indexed=bool(meta.get("indexed")),
+        indexed=bool(meta.get("indexed", True)),
     )
 
 
 @router.delete("/reset")
 def reset_index():
-    """Clear the resume index (wipes stale/non-resume chunks)."""
-    deleted = clear_collection()
+    """Clear the active resume."""
+    meta = get_active_doc()
+    deleted = _chunk_count(meta) if meta else 0
     clear_active_doc()
     return {"ok": True, "deleted_chunks": deleted}
