@@ -1,15 +1,14 @@
-# Backend image for Resume Coach (FastAPI + local JSON/SQLite state).
-# Fallback host for Railway / Render / Fly.io. On Vercel the backend runs as a
-# Vercel Service (see vercel.json) — this image is not required there.
+# Resume Coach — one FastAPI image serving both the UI and the JSON API.
+# Templates and static assets live in backend/ and ship with the image.
 #
-#   docker build -t resume-coach-api .
+#   docker build -t resume-coach .
 #   docker run -p 8000:8000 \
 #     -e LLM_PROVIDER=gemini \
 #     -e GEMINI_API_KEY=your_key \
-#     -e FRONTEND_URL=https://your-app.vercel.app \
 #     -v resume_data:/data \
-#     resume-coach-api
+#     resume-coach
 #
+# Open http://localhost:8000 — /, /upload and /chat are served by FastAPI.
 # /data holds the active resume JSON and sessions.db. Mount a persistent volume
 # there or uploads vanish on redeploy.
 

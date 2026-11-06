@@ -1,31 +1,28 @@
-# Resume Coach — Local (Ollama) · Vercel (Gemini, one project)
+# Resume Coach — one FastAPI app (Ollama local · Gemini hosted)
 
 A PDF **resume** chatbot: upload your resume/CV, then chat with a coach that
-reviews/develops it, expands its content, or shortens it. Anything unrelated
-to resumes is declined. Runs fully local on Windows without Docker.
+reviews/develops it, expands its content, or shortens it. Anything unrelated to
+resumes is declined.
+
+The whole product — pages, static assets and JSON API — runs in **one FastAPI
+process**. There is no Node.js build and no separate frontend service.
 
 ## Prerequisites
 
-1. **Ollama** — download and install from https://ollama.com (Windows installer)
-2. **Python 3.10+**
-3. **Node.js 18+**
+1. **Python 3.10+**
+2. **Ollama** — https://ollama.com (optional if you use Gemini instead)
+3. No Node.js required
 
-## Pull Ollama models (run once in PowerShell)
+## Pull Ollama models (run once in PowerShell, for local Ollama)
 
 ```powershell
 ollama pull llama3.2:3b
 ollama pull embeddinggemma:latest
 ```
 
-## Start Ollama server
+Ollama serves on `http://localhost:11434`. Verify it with `ollama list`.
 
-Ollama runs automatically after install. Verify it's running:
-```powershell
-ollama list
-```
-It serves on http://localhost:11434
-
-## Backend
+## Run locally
 
 ```powershell
 cd E:\frist_rag
@@ -33,208 +30,222 @@ copy backend\.env.example backend\.env
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r backend\requirements.txt
-# Windows: forces the selector event loop — the default Proactor loop can die with
-# [WinError 64] and surface in the UI as "Backend unreachable"
+
+# Windows: forces the selector event loop — the default Proactor loop can die
+# with [WinError 64] and surface as "Backend unreachable"
 python run_backend.py
 ```
 
+Open **http://localhost:8000**. The app serves its own UI:
+
+- `/` — home
+- `/upload` — upload a resume PDF
+- `/chat` — the coach
+- `/health` — provider diagnostics (JSON)
+- `/docs` — FastAPI's generated API documentation
+
 On macOS/Linux, `uvicorn backend.main:app --reload --port 8000` works the same.
-
-Note: the backend uses `backend.*` package imports, so uvicorn must run from the project root (`E:\frist_rag`), not from inside `backend\`.
-
-## Frontend (new terminal)
-
-```powershell
-cd E:\frist_rag\frontend
-npm install
-npm run dev
-```
-
-Open http://localhost:3000
-
-The browser calls the same-origin `/api/backend/*` proxy, which forwards to
-`BACKEND_URL` (`http://localhost:8000` by default — set in `frontend/.env.local`).
-This is the same code path used on Vercel.
+Run uvicorn from the project root (not from inside `backend/`), because the code
+uses `backend.*` package imports.
 
 ## Architecture
 
-Next.js frontend → same-origin `/api/backend` proxy → FastAPI backend → LLM provider
-(chat) → active resume stored as JSON locally (`./chroma_db/active_resume.json`)
-or in Upstash Redis on Vercel. Chat sends the whole resume as context, so no
-vector index or embedding step is needed.
+```
+Browser
+   │
+   ▼
+FastAPI (one process)
+   ├── HTML pages      /  /upload  /chat        Jinja2 templates
+   ├── Static files    /static/css, /static/js
+   ├── JSON API        /ingest  /chat  /sessions  /health
+   ├── PDF pipeline    pypdf → resume gate → chunks → active resume
+   ├── Coach logic     guardrails + prompts + intent routing
+   ├── LLM             Ollama (local) / Gemini (hosted)
+   └── Storage         JSON file + SQLite  |  Upstash Redis on Vercel
+```
 
-On Vercel both apps deploy as **one project** using [Vercel Services](#deploying-to-vercel):
-`frontend/` (Next.js) and `backend/` (FastAPI) are separate services wired by
-`vercel.json`, and the backend is reachable only through the frontend proxy.
+- **One active resume** is stored as JSON in `DATA_DIR` (`./chroma_db` locally,
+  `/tmp/data` on Vercel) or in Upstash Redis when its REST env vars exist.
+- **Sessions** live in `sessions.db` (SQLite) locally, or Upstash Redis on
+  Vercel.
+- Chat sends the whole active resume as context, so no vector index or
+  embedding call is needed.
+- Assistant Markdown is rendered **server-side in Python** (`markdown-it-py`,
+  raw HTML disabled) and returned as `answer_html`, so the browser needs no
+  Markdown library.
 
 ## Resume-specific behavior
 
-- **Fast upload** — the PDF is parsed, checked, chunked and saved in one pass; no
-  embeddings or LLM calls run on the upload path, so it returns quickly.
-- **Upload gate** — `backend/resume/guardrails.py::is_resume_document_fast` checks extracted
-  PDF text (section headings, contact info, education tokens, date ranges vs. paper/
-  invoice markers). Non-resume PDFs are rejected with HTTP 400.
-- **Grounded answers** — the coach reads the whole active resume, not a search snippet.
-  Questions about facts that aren't in the resume return `kind: "not_found"` and prompt
-  the user to upload a different PDF; with no resume uploaded it returns `kind: "no_resume"`.
-- **Blank start** — `/chat` always opens a fresh conversation with the three mode cards;
-  earlier conversations stay under **Past chats**.
-- **Chat gate** — `is_resume_related` screens every message: a keyword allow/deny screen
-  in Python first; ambiguous messages go to a one-letter LLM classifier. Off-topic requests
-  get a "resume coach only" refusal and skip retrieval entirely.
-- **Intent routing** — `classify_intent` maps messages to `review` (review & develop
-  suggestions), `expand` (STAR detail), `shorten` (one-page condensing) or `general`.
-  The frontend also sends explicit intents from the quick-action chips.
-- **Coaching rules** — `backend/resume/prompts.py` encodes professional standards:
-  Action + Context + Result / STAR bullets, strong action verbs, quantified achievements,
-  no invented facts (missing numbers become `[placeholders]`), ATS-friendly formatting.
+- **Fast upload** — the PDF is parsed, checked, chunked and saved in one pass;
+  no embeddings or LLM calls run on the upload path.
+- **Upload gate** — `backend/resume/guardrails.py::is_resume_document_fast`
+  checks extracted PDF text (section headings, contact info, education tokens,
+  date ranges vs. paper/invoice markers). Non-resume PDFs are rejected with
+  HTTP 400.
+- **Grounded answers** — the coach reads the whole active resume. Questions
+  about facts that aren't in the resume return `kind: "not_found"`; with no
+  resume uploaded it returns `kind: "no_resume"`.
+- **Blank start** — `/chat` always opens a fresh conversation with the three
+  mode cards; earlier conversations stay under **Past chats**.
+- **Chat gate** — `is_resume_related` screens every message: a keyword
+  allow/deny screen in Python first; ambiguous messages go to a one-letter LLM
+  classifier. Off-topic requests get a "resume coach only" refusal and skip
+  retrieval entirely.
+- **Intent routing** — `classify_intent` maps messages to `review`, `expand`,
+  `shorten` or `general`. The UI's quick actions send explicit intents.
+- **Coaching rules** — `backend/resume/prompts.py` encodes professional
+  standards: Action + Context + Result / STAR bullets, strong action verbs,
+  quantified achievements, no invented facts (missing numbers become
+  `[placeholders]`), ATS-friendly formatting.
 
-## LLM providers: Local = Ollama · Vercel = Gemini
+## LLM providers: local = Ollama · hosted = Gemini
 
-Local development uses **Ollama** (already the default) — nothing to configure.
+Local development uses **Ollama** by default.
 
-On a hosted backend (the Vercel flow), switch to **Gemini** by setting on the
-backend host:
+On a hosted server, set:
 
 - `LLM_PROVIDER=gemini`
 - `GEMINI_API_KEY=your_key` (free: https://aistudio.google.com/apikey)
-- Optional: `GEMINI_CHAT_MODEL` (default `gemini-2.5-flash`), `GEMINI_EMBED_MODEL` (default `text-embedding-004`)
+- Optional: `GEMINI_CHAT_MODEL` (default `gemini-2.5-flash`),
+  `GEMINI_EMBED_MODEL`
 
 Two conveniences:
 
-- **Auto-fallback**: with `LLM_PROVIDER=ollama` locally, if Ollama is not running
-  and a `GEMINI_API_KEY` is set in `backend/.env`, the backend silently uses
-  Gemini instead of failing.
+- **Auto-fallback**: with `LLM_PROVIDER=ollama` locally, if Ollama is not
+  running and a `GEMINI_API_KEY` is set, the backend silently uses Gemini.
 - **Self-diagnostics**: `GET /health` reports the active provider, whether
   Ollama is reachable, and whether a Gemini key is configured.
 - **Slow CPU-only machines**: a full-resume review of `llama3.2:3b` on CPU can
   take several minutes. Tune in `backend/.env`:
   - `OLLAMA_TIMEOUT` (default `1200` seconds)
   - `OLLAMA_NUM_CTX` (default `8192`)
-  - `OLLAMA_NUM_PREDICT` (default `1024`; lower for faster, shorter replies)
-
-  Errors now surface the provider's real message (timeout, missing model, ...)
-  instead of a generic "chat request failed" notice.
-
-## Troubleshooting: "Backend unreachable"
-
-The frontend banner (and chat/upload errors) ping `/health` and tell you the fix
-for your environment:
-
-- **Local dev** — the banner says the backend is down. Start it from the repo root:
-  ```powershell
-  python run_backend.py
-  ```
-  (`run_backend.py` forces the Windows selector event loop; the default
-  Proactor loop can crash with `[WinError 64]` and take the server down.
-  `uvicorn backend.main:app --reload --port 8000` works too on non-Windows.)
-  and make sure Ollama is running for local answers (`ollama list`). CORS already
-  allows `http://localhost:3000`.
-- **Vercel (production)** — the browser calls the same-origin `/api/backend`
-  proxy, which forwards to the private FastAPI service using the `BACKEND_URL`
-  value injected by the service binding in `vercel.json`. If the banner appears,
-  check the **backend** service logs in the deployment (Vercel → Project →
-  Deployments → Functions) and that `LLM_PROVIDER=gemini` + `GEMINI_API_KEY` are
-  set. Remove any old `NEXT_PUBLIC_API_BASE` from the project env — a
-  `localhost` value is detected and reported explicitly.
-- `NEXT_PUBLIC_API_BASE` still works as an optional override to call a backend
-  directly from the browser (bypassing the proxy), but it is not needed.
+  - `OLLAMA_NUM_PREDICT` (default `1024`)
+  - `OLLAMA_CHAT_MODEL` (use `llama3.2:1b` for speed)
 
 ## Endpoints
 
-- POST /ingest — upload a resume PDF (non-resumes are rejected; replaces the active resume)
-- GET /ingest/status — active resume filename/chunk count, or `has_resume: false`
-- DELETE /ingest/reset — clear the resume index (e.g. to remove pre-gate documents)
-- POST /chat — talk to the coach, optional `intent` field: `review | expand | shorten | general | auto`.
-  Responses include `kind`: `answer | refusal | no_resume | not_found`
-- GET /sessions/{id} — conversation history
-- GET /sessions — list sessions
-- GET /health
+HTML pages (server-rendered):
 
-## Deploying to Vercel
+| Route | Purpose |
+| --- | --- |
+| `GET /` | Home page |
+| `GET /upload` | Upload page |
+| `GET /chat` | Chat page (blank start; history loads in place) |
+| `GET /static/...` | CSS / JavaScript / icons |
 
-The repo deploys as **one Vercel project** with two services declared in
-`vercel.json` ([Vercel Services](https://vercel.com/docs/services), beta on all
-plans):
+JSON API (kept for scripts, tests and future clients):
 
-| Service  | Root       | Framework | Notes |
-| -------- | ---------- | --------- | ----- |
-| frontend | `frontend/` | nextjs    | Public entry point |
-| backend  | `backend/`  | fastapi   | Private; entrypoint `main:app` |
+| Route | Purpose |
+| --- | --- |
+| `POST /ingest` | Upload a resume PDF (non-resumes rejected; replaces the active resume) |
+| `GET /ingest/status` | Active resume filename/chunk count, or `has_resume: false` |
+| `DELETE /ingest/reset` | Clear the active resume |
+| `POST /chat` | Talk to the coach. Optional `intent`: `review \| expand \| shorten \| general \| auto`. Response includes `kind` (`answer \| refusal \| no_resume \| not_found`) and `answer_html` |
+| `GET /chat/{session_id}` | Conversation history (JSON) |
+| `POST /sessions` | Create a session |
+| `GET /sessions` | List sessions |
+| `GET /sessions/{id}` | Messages (assistant messages include rendered `html`) |
+| `DELETE /sessions/{id}` | Delete a session |
+| `GET /health` | Provider / Ollama / Gemini status |
 
-The FastAPI service is **private**. The Next.js app calls it through the
-same-origin `/api/backend/*` proxy (`frontend/app/api/backend/[...path]/route.ts`),
-which reads the `BACKEND_URL` the service binding injects. There is no CORS
-setup and no `NEXT_PUBLIC_API_BASE` URL to configure.
+## Deploying to Vercel (one service)
 
-### 1. Import the repository
+`vercel.json` declares a **single** FastAPI service and rewrites all traffic to
+it. Templates and static files are inside `backend/`, so they ship with the
+function.
 
 1. Go to https://vercel.com/new and **Import** the GitHub repo.
-2. **Root Directory = the repository root** — do **not** select `frontend/` or
-   `backend/` (that is what produced the earlier one-framework deploy).
-3. **Framework Preset = Services** (not Next.js, not FastAPI). `vercel.json`
-   declares both services.
-4. Click **Deploy**.
+2. **Root Directory = the repository root** (not `backend/`).
+3. **Framework Preset = Services** (the config declares the FastAPI service).
+4. Deploy.
 
-### 2. Environment variables
-
-Project → **Settings → Environment Variables**:
+Then set these environment variables (Project → Settings → Environment
+Variables):
 
 - `LLM_PROVIDER=gemini`
-- `GEMINI_API_KEY=your_key` (https://aistudio.google.com/apikey)
+- `GEMINI_API_KEY=your_key`
 - Optional: `MAX_UPLOAD_MB=4` (Vercel caps request bodies at 4.5 MB)
 - Optional: `GEMINI_CHAT_MODEL` (default `gemini-2.5-flash`)
 
-Remove `NEXT_PUBLIC_API_BASE` if it exists — the same-origin proxy is the
-default and a leftover `localhost` value is reported by the in-app banner.
-
-### 3. Persistent storage (Upstash Redis)
+### Persistent storage (Upstash Redis)
 
 Vercel Functions have an ephemeral `/tmp` only, so without storage the uploaded
 resume and past chats reset after cold starts.
 
-1. Project → **Storage** → **Upstash Redis** → connect it to Production
-   (and Preview, if you use previews).
+1. Project → **Storage** → **Upstash Redis** → connect it to Production (and
+   Preview if used).
 2. The integration injects `KV_REST_API_URL` / `KV_REST_API_TOKEN` (or the
    `UPSTASH_REDIS_REST_*` equivalents); both are supported.
-3. Redeploy so the variables reach the backend service.
+3. Redeploy so the variables reach the service.
 
 Without Upstash the app still works, but it falls back to ephemeral `/tmp`
 storage and asks you to re-upload after the function goes cold.
 
-### 4. Verify
+### Verify
 
-- `https://<your-app>.vercel.app/api/backend/health` should report
-  `"active_provider": "gemini"` (not `ollama`).
+- `https://<your-app>.vercel.app/` renders the home page.
+- `https://<your-app>.vercel.app/health` reports `"active_provider": "gemini"`.
+- `/upload` and `/chat` work; `/static/css/app.css` is served.
 - Upload a PDF, then chat.
 
-### Why the first attempt returned `500 FUNCTION_INVOCATION_FAILED`
+> If your Vercel plan rejects a single-service rewrite, the fallback is a tiny
+> root `api/index.py` that exports the FastAPI `app` plus a rewrite of `/(.*)`
+> to `/api/index`. The application code itself does not change.
 
-A single Vercel project normally runs **one** framework, so importing this
-monorepo offered either Next.js or FastAPI. Deploying the FastAPI half alone
-crashed the function:
+## Docker / Render / Railway / VPS
 
-1. With the backend folder as the Root Directory, `main.py` imports
-   `backend.config` but the `backend` package is only importable from the repo
-   root → `ModuleNotFoundError` → 500 on every request.
-2. Startup opened ChromaDB at `./chroma_db` and sessions at `sessions.db` — the
-   Vercel filesystem is read-only → crash.
-3. No `LLM_PROVIDER=gemini` / `GEMINI_API_KEY` was set, so it defaulted to
-   Ollama, which does not exist on Vercel.
+The root `Dockerfile` builds the same single FastAPI app:
 
-The Services setup above fixes all three: repo-root build, writable paths
-(`/tmp`, or Upstash), and Gemini via environment variables.
+```powershell
+docker build -t resume-coach .
+docker run -p 8000:8000 `
+  -e LLM_PROVIDER=gemini `
+  -e GEMINI_API_KEY=your_key `
+  -v resume_data:/data `
+  resume-coach
+```
 
-### Fallback: host the backend separately (Docker)
-
-If you prefer a separate backend host (Railway/Render/Fly.io), the root
-`Dockerfile` builds the FastAPI service. Mount a volume at `/data` and set:
+Mount a volume at `/data` and keep:
 
 - `LLM_PROVIDER=gemini`, `GEMINI_API_KEY`
 - `DATA_DIR=/data`
 - `SESSIONS_DB_PATH=/data/sessions.db`
-- `FRONTEND_URL=https://your-app.vercel.app` (CORS)
 
-Then set `NEXT_PUBLIC_API_BASE=https://your-backend-host` in the Vercel
-frontend project to bypass the proxy.
+Open `http://localhost:8000` (or your host URL).
 
+## Troubleshooting
+
+- **"Backend unreachable" in the UI** — the browser talks to the same origin,
+  so this means the FastAPI process is down. Start it with
+  `python run_backend.py`. Check `/health`.
+- **Ollama errors** — run `ollama list` and make sure `OLLAMA_CHAT_MODEL`
+  exists. The app now surfaces the provider's real error (missing model,
+  timeout, …) in the chat bubble.
+- **Uploads rejected** — the file must be a resume/CV PDF. The guard checks
+  headings, contact details, education and date ranges.
+- **Vercel cold starts lose the resume** — connect Upstash Redis; Vercel's
+  filesystem is ephemeral.
+- **CORS** — no longer needed: UI and API are the same origin. If you call the
+  JSON API from another domain, add CORS middleware back in `backend/main.py`.
+
+## Project layout
+
+```
+backend/
+  main.py                 FastAPI app: static mount, page routes, API routers
+  config.py               Paths, providers, limits
+  web/
+    routes.py             HTML page routes + Jinja filters
+    markdown.py           Python Markdown rendering / plain-text stripping
+  templates/              base, home, upload, chat, icon sprite
+  static/                 app.css, api.js, upload.js, chat.js
+  chat/router.py          Coach endpoint
+  ingest/router.py        PDF upload + status/reset
+  sessions/               Session storage + endpoints
+  db/store.py             Active resume (file / Upstash Redis)
+  llm/                    Ollama and Gemini clients with fallback
+  resume/                 Guardrails and prompts
+run_backend.py            Windows-safe launcher
+Dockerfile                Single-image deployment
+vercel.json               Single FastAPI service
+```

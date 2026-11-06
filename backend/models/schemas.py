@@ -28,6 +28,9 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
+    # Pre-rendered, sanitised Markdown so the server-rendered UI does not need
+    # a JavaScript Markdown library. ``answer`` stays raw for API clients.
+    answer_html: Optional[str] = None
     sources: List[dict]
     session_id: str
     kind: str = "answer"  # answer | refusal | no_resume | not_found

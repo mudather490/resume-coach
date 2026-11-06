@@ -120,6 +120,40 @@ def clear_active_doc() -> None:
         _file_clear_active()
 
 
+def chunk_count(meta: Optional[Dict]) -> int:
+    """Number of chunks in an active-document record, tolerating old shapes."""
+    if not meta:
+        return 0
+    chunks = meta.get("chunks")
+    if isinstance(chunks, list):
+        return len(chunks)
+    if isinstance(chunks, int):
+        return chunks
+    return int(meta.get("chunk_count") or 0)
+
+
+def active_resume_status() -> Dict:
+    """Summary shared by the status endpoint and the HTML pages."""
+    meta = get_active_doc()
+    if not meta:
+        return {
+            "has_resume": False,
+            "doc_id": None,
+            "filename": None,
+            "chunks": 0,
+            "uploaded_at": None,
+            "indexed": False,
+        }
+    return {
+        "has_resume": True,
+        "doc_id": meta.get("doc_id"),
+        "filename": meta.get("filename") or meta.get("doc_id"),
+        "chunks": chunk_count(meta),
+        "uploaded_at": meta.get("uploaded_at"),
+        "indexed": bool(meta.get("indexed", True)),
+    }
+
+
 def get_document_chunks(doc_id: str) -> List[dict]:
     """Chunks of the active document, ordered by chunk_index."""
     meta = get_active_doc()

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Resume Coach — your private resume coach{% endblock %}
+
+{% block content %}
+<div class="page page-home">
+  <section class="hero">
+    <span class="badge">
+      <svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>
+      Fully local with Ollama · Gemini when hosted
+    </span>
+    <h1 class="hero-title">Your private<br><span>resume coach.</span></h1>
+    <p class="hero-copy">
+      Upload your resume PDF and chat with a coach whose only job is developing
+      it — review, expand, shorten. Anything unrelated to resumes is declined.
+    </p>
+    <div class="hero-actions">
+      <a class="btn btn-primary btn-lg" href="/upload">
+        <svg class="icon" aria-hidden="true"><use href="#i-file-up"/></svg>
+        Upload resume
+      </a>
+      <a class="btn btn-outline btn-lg" href="/chat">
+        <svg class="icon" aria-hidden="true"><use href="#i-message-circle"/></svg>
+        Open the coach
+      </a>
+    </div>
+    <p class="hero-note">
+      <svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg>
+      Non-resume PDFs are rejected automatically
+    </p>
+  </section>
+
+  <section class="features" aria-label="How the coach works">
+    <article class="feature-card">
+      <div class="feature-icon"><svg class="icon" aria-hidden="true"><use href="#i-list-checks"/></svg></div>
+      <h3 class="feature-title">1. Review &amp; develop</h3>
+      <p class="feature-text">
+        Get concrete, section-by-section feedback — action verbs, quantified
+        results, ATS keywords — plus suggestions on what to add next.
+      </p>
+    </article>
+    <article class="feature-card">
+      <div class="feature-icon"><svg class="icon" aria-hidden="true"><use href="#i-maximize-2"/></svg></div>
+      <h3 class="feature-title">2. Expand content</h3>
+      <p class="feature-text">
+        Turn thin bullets into full STAR accomplishments. Your coach never
+        invents facts — missing numbers come back as [placeholders] with a
+        question.
+      </p>
+    </article>
+    <article class="feature-card">
+      <div class="feature-icon"><svg class="icon" aria-hidden="true"><use href="#i-minimize-2"/></svg></div>
+      <h3 class="feature-title">3. Shorten content</h3>
+      <p class="feature-text">
+        Condense to tight one-line bullets that keep every number and key fact,
+        aimed at a clean one-page layout.
+      </p>
+    </article>
+  </section>
+
+  <section class="callout">
+    <div class="callout-icon"><svg class="icon" aria-hidden="true"><use href="#i-sparkles"/></svg></div>
+    <div>
+      <h3 class="callout-title">Stay on topic</h3>
+      <p class="callout-text">
+        The coach is trained to only talk resumes. Try asking for a poem —
+        it will politely redirect you back to your career documents.
+      </p>
+    </div>
+  </section>
+</div>
+{% endblock %}

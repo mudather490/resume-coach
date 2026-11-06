@@ -8,24 +8,17 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from backend.config import CHUNK_SIZE, CHUNK_OVERLAP, MAX_UPLOAD_MB
 from backend.ingest.pdf_parser import extract_pdf_pages, chunk_pages
 from backend.db.store import (
+    active_resume_status,
+    chunk_count,
     clear_active_doc,
-    set_active_doc,
     get_active_doc,
+    set_active_doc,
 )
 from backend.models.schemas import IngestResponse, IngestStatus
 from backend.resume.prompts import UPLOAD_REJECTION
 from backend.resume.guardrails import is_resume_document_fast
 
 router = APIRouter()
-
-
-def _chunk_count(meta: dict) -> int:
-    chunks = meta.get("chunks")
-    if isinstance(chunks, list):
-        return len(chunks)
-    if isinstance(chunks, int):
-        return chunks
-    return int(meta.get("chunk_count") or 0)
 
 
 @router.post("", response_model=IngestResponse)
@@ -83,23 +76,12 @@ async def ingest_pdf(file: UploadFile = File(...)):
 
 @router.get("/status", response_model=IngestStatus)
 def ingest_status():
-    meta = get_active_doc()
-    if not meta:
-        return IngestStatus(has_resume=False)
-    return IngestStatus(
-        has_resume=True,
-        doc_id=meta.get("doc_id"),
-        filename=meta.get("filename") or meta.get("doc_id"),
-        chunks=_chunk_count(meta),
-        uploaded_at=meta.get("uploaded_at"),
-        indexed=bool(meta.get("indexed", True)),
-    )
+    return IngestStatus(**active_resume_status())
 
 
 @router.delete("/reset")
 def reset_index():
     """Clear the active resume."""
-    meta = get_active_doc()
-    deleted = _chunk_count(meta) if meta else 0
+    deleted = chunk_count(get_active_doc())
     clear_active_doc()
     return {"ok": True, "deleted_chunks": deleted}

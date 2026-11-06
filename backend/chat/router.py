@@ -23,6 +23,7 @@ from backend.resume.guardrails import (
     looks_like_missing_fact,
     asks_about_missing_fact,
 )
+from backend.web.markdown import render_markdown
 
 router = APIRouter()
 
@@ -111,7 +112,13 @@ async def chat_endpoint(req: ChatRequest):
     add_message(session_id, "user", req.message)
     add_message(session_id, "assistant", answer)
 
-    return ChatResponse(answer=answer, sources=sources, session_id=session_id, kind=kind)
+    return ChatResponse(
+        answer=answer,
+        answer_html=render_markdown(answer),
+        sources=sources,
+        session_id=session_id,
+        kind=kind,
+    )
 
 
 @router.get("/{session_id}")

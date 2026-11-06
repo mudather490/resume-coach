@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Upload your resume — Resume Coach{% endblock %}
+
+{% block content %}
+<div class="page page-narrow">
+  <div class="page-head">
+    <h1>Upload your resume</h1>
+    <p>
+      Resume/CV PDFs only — other documents are rejected. A new upload replaces
+      the current resume immediately.
+    </p>
+  </div>
+
+  <div id="active-resume" class="active-card {% if not resume.has_resume %}hidden{% endif %}">
+    <svg class="icon icon-indigo" aria-hidden="true"><use href="#i-file-text"/></svg>
+    <div class="active-card-body">
+      <p id="active-resume-name" class="active-card-name">{{ resume.filename or "" }}</p>
+      <p class="active-card-meta">
+        Active resume · <span id="active-resume-chunks">{{ resume.chunks }}</span> chunks.
+        Uploading a new PDF replaces it.
+      </p>
+    </div>
+  </div>
+
+  <form id="upload-form" class="stack" data-max-mb="{{ max_upload_mb }}">
+    <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Choose a resume PDF">
+      <input id="file-input" class="visually-hidden" type="file" accept=".pdf,application/pdf">
+      <div id="dropzone-empty" class="dropzone-empty">
+        <div class="dropzone-icon"><svg class="icon" aria-hidden="true"><use href="#i-file-up"/></svg></div>
+        <div>
+          <p class="dropzone-title">Drop your resume PDF here, or <span>browse</span></p>
+          <p class="dropzone-hint">Resume/CV PDF only · max {{ max_upload_mb }} MB</p>
+        </div>
+      </div>
+      <div id="dropzone-file" class="dropzone-file hidden">
+        <div class="file-badge"><svg class="icon" aria-hidden="true"><use href="#i-file-text"/></svg></div>
+        <div class="file-info">
+          <p id="file-name" class="file-name"></p>
+          <p id="file-size" class="file-size"></p>
+        </div>
+      </div>
+    </div>
+
+    <div id="upload-error" class="alert alert-error hidden" role="alert">
+      <svg class="icon" aria-hidden="true"><use href="#i-alert-circle"/></svg>
+      <div>
+        <p id="upload-error-text"></p>
+        <button type="button" id="choose-another" class="link-btn">Choose another PDF</button>
+      </div>
+    </div>
+
+    <div id="upload-success" class="alert alert-success hidden" role="status">
+      <svg class="icon" aria-hidden="true"><use href="#i-check-circle-2"/></svg>
+      <div>
+        <p id="upload-success-title" class="strong"></p>
+        <p class="muted">Ready to go. Pick a mode and let your coach work on it.</p>
+        <div class="row gap-2 mt-3">
+          <a class="btn btn-primary" href="/chat">
+            <svg class="icon" aria-hidden="true"><use href="#i-message-circle"/></svg>
+            Coach now
+          </a>
+          <button type="button" id="upload-another" class="btn btn-ghost">
+            <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>
+            Upload another
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <button id="upload-submit" type="submit" class="btn btn-primary btn-block btn-lg" disabled>
+      <svg id="upload-spinner" class="icon spin hidden" aria-hidden="true"><use href="#i-loader-2"/></svg>
+      <svg id="upload-submit-icon" class="icon" aria-hidden="true"><use href="#i-file-up"/></svg>
+      <span id="upload-submit-label">Save resume</span>
+    </button>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/upload.js"></script>
+{% endblock %}

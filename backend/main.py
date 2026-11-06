@@ -1,44 +1,44 @@
 import os
 import sys
 
-# Vercel's FastAPI service uses `entrypoint: main:app` with the backend/ folder
-# as its root, while local development uses `uvicorn backend.main:app` from the
-# repo root. Put the repo root on sys.path so the same `backend.*` imports work
-# in both cases.
+# Vercel's FastAPI service uses `entrypoint: vercel_entrypoint:app` with the
+# backend/ folder as its root, while local development uses
+# `uvicorn backend.main:app` from the repo root. Put the repo root on sys.path
+# so the same `backend.*` imports work in both cases.
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
-from backend.config import FRONTEND_URL
+from fastapi.staticfiles import StaticFiles
 
-app = FastAPI(title="RAG Chatbot", version="0.1.0")
+from backend.chat.router import router as chat_router
+from backend.ingest.router import router as ingest_router
+from backend.sessions.router import router as sessions_router
+from backend.web.routes import router as web_router
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[FRONTEND_URL, "http://localhost:3000"],
-    # Vercel assigns wildcard subdomains per deploy: app-name-team.vercel.app
-    allow_origin_regex=r"https://[a-z0-9-]+\.vercel\.app",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+app = FastAPI(title="Resume Coach", version="1.0.0")
+
+# The UI is served by this same process: /static/css, /static/js, ...
+app.mount(
+    "/static",
+    StaticFiles(directory=os.path.join(_BASE_DIR, "static")),
+    name="static",
 )
 
-from backend.ingest.router import router as ingest_router
-from backend.chat.router import router as chat_router
-from backend.sessions.router import router as sessions_router
+# HTML pages (/, /upload, /chat)
+app.include_router(web_router)
 
+# JSON API (kept for scripts, tests and future clients)
 app.include_router(ingest_router, prefix="/ingest", tags=["ingest"])
 app.include_router(chat_router, prefix="/chat", tags=["chat"])
 app.include_router(sessions_router, prefix="/sessions", tags=["sessions"])
 
-@app.get("/", include_in_schema=False)
-def root():
-    return RedirectResponse(url=FRONTEND_URL)
 
 @app.get("/health")
 def health():
     from backend.llm import provider_status
+
     return {"status": "ok", **provider_status()}

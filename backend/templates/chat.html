@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Resume Coach — chat{% endblock %}
+
+{% block content %}
+<div id="chat-page" class="page page-chat" data-has-resume="{{ 'true' if resume.has_resume else 'false' }}">
+  <div class="chat-head">
+    <h1>Resume Coach</h1>
+    <div class="row gap-2">
+      <button id="toggle-history" type="button" class="btn btn-soft">
+        <svg class="icon" aria-hidden="true"><use href="#i-history"/></svg>
+        Past chats
+      </button>
+      <button id="new-chat" type="button" class="btn btn-outline">
+        <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>
+        New chat
+      </button>
+    </div>
+  </div>
+
+  <div id="resume-chip" class="resume-chip {% if not resume.has_resume %}hidden{% endif %}">
+    <svg class="icon icon-indigo" aria-hidden="true"><use href="#i-file-text"/></svg>
+    <span id="resume-chip-name" class="truncate strong">{{ resume.filename or "" }}</span>
+    <span class="dot-sep">·</span>
+    <span id="resume-chip-chunks" class="muted">{{ resume.chunks }} chunks</span>
+    <a class="link ml-auto" href="/upload">Replace</a>
+  </div>
+
+  <section id="history-panel" class="history hidden" aria-label="Conversation history">
+    <div class="history-head">Conversation history</div>
+    <div id="history-list" class="history-list">
+      {% if sessions %}
+        {% for s in sessions %}
+        <div class="history-row" data-session-id="{{ s.id }}" role="button" tabindex="0">
+          <span class="history-dot"></span>
+          <div class="history-main">
+            <p class="history-title">{{ s.title or "Empty chat" }}</p>
+            <p class="history-date" data-created-at="{{ s.created_at or '' }}"></p>
+          </div>
+          <button type="button" class="icon-btn danger delete-session" data-session-id="{{ s.id }}" aria-label="Delete chat">
+            <svg class="icon" aria-hidden="true"><use href="#i-trash-2"/></svg>
+          </button>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="history-empty">No previous chats yet</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <div class="chat-shell">
+    <div id="message-log" class="message-log" role="log" aria-live="polite" aria-relevant="additions">
+      <div id="empty-state" class="empty-state">
+        <div class="empty-icon"><svg class="icon" aria-hidden="true"><use href="#i-bot"/></svg></div>
+        <div>
+          <p class="empty-title">How should I work on your resume?</p>
+          <p class="empty-copy">Pick a mode to start. Your coach only uses the resume PDF you upload.</p>
+        </div>
+
+        <div id="no-resume-card" class="alert alert-warn {% if resume.has_resume %}hidden{% endif %}">
+          <svg class="icon" aria-hidden="true"><use href="#i-alert-circle"/></svg>
+          <div>
+            <p class="strong">No resume uploaded yet</p>
+            <p class="muted">Upload a PDF first, then review, expand, or shorten it.</p>
+            <a class="inline-link" href="/upload">
+              <svg class="icon" aria-hidden="true"><use href="#i-file-up"/></svg>
+              Upload resume
+            </a>
+          </div>
+        </div>
+
+        <div class="quick-actions">
+          <button type="button" class="quick-action" data-intent="review"
+                  data-message="Review my resume and give me concrete suggestions on how to develop it further.">
+            <span class="quick-icon"><svg class="icon" aria-hidden="true"><use href="#i-list-checks"/></svg></span>
+            <span class="quick-body">
+              <span class="quick-title">Review &amp; develop</span>
+              <span class="quick-desc">Get a verdict plus concrete improvements and what to add next.</span>
+            </span>
+            <svg class="icon chevron" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+          </button>
+          <button type="button" class="quick-action" data-intent="expand"
+                  data-message="Expand and enrich my resume bullet points with more detail.">
+            <span class="quick-icon"><svg class="icon" aria-hidden="true"><use href="#i-maximize-2"/></svg></span>
+            <span class="quick-body">
+              <span class="quick-title">Expand content</span>
+              <span class="quick-desc">Turn thin bullets into detailed STAR accomplishments.</span>
+            </span>
+            <svg class="icon chevron" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+          </button>
+          <button type="button" class="quick-action" data-intent="shorten"
+                  data-message="Shorten my resume content and make it tighter for a one-page layout.">
+            <span class="quick-icon"><svg class="icon" aria-hidden="true"><use href="#i-minimize-2"/></svg></span>
+            <span class="quick-body">
+              <span class="quick-title">Shorten content</span>
+              <span class="quick-desc">Tighten the resume for a clean, one-page layout.</span>
+            </span>
+            <svg class="icon chevron" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="composer">
+      <div class="quick-chips">
+        <button type="button" class="chip quick-action" data-intent="review"
+                data-message="Review my resume and give me concrete suggestions on how to develop it further.">
+          <svg class="icon" aria-hidden="true"><use href="#i-list-checks"/></svg>
+          Review &amp; develop
+        </button>
+        <button type="button" class="chip quick-action" data-intent="expand"
+                data-message="Expand and enrich my resume bullet points with more detail.">
+          <svg class="icon" aria-hidden="true"><use href="#i-maximize-2"/></svg>
+          Expand content
+        </button>
+        <button type="button" class="chip quick-action" data-intent="shorten"
+                data-message="Shorten my resume content and make it tighter for a one-page layout.">
+          <svg class="icon" aria-hidden="true"><use href="#i-minimize-2"/></svg>
+          Shorten content
+        </button>
+      </div>
+      <form id="chat-form" class="composer-row">
+        <textarea id="message-input" rows="1" aria-label="Message the resume coach"
+                  placeholder="Ask about your resume...  (Enter to send)"></textarea>
+        <button id="send-btn" type="submit" class="send-btn" aria-label="Send" disabled>
+          <svg class="icon" aria-hidden="true"><use href="#i-send"/></svg>
+        </button>
+      </form>
+      <p class="composer-hint">Shift + Enter for a new line · Answers come only from your uploaded resume</p>
+    </div>
+  </div>
+</div>
+
+<template id="tpl-user-message">
+  <div class="msg msg-user">
+    <button type="button" class="copy-btn compact" aria-label="Copy message" title="Copy">
+      <svg class="icon copy-icon" aria-hidden="true"><use href="#i-copy"/></svg>
+      <svg class="icon check-icon hidden" aria-hidden="true"><use href="#i-check"/></svg>
+    </button>
+    <div class="bubble bubble-user"></div>
+  </div>
+</template>
+
+<template id="tpl-assistant-message">
+  <div class="msg msg-assistant">
+    <div class="avatar"><svg class="icon" aria-hidden="true"><use href="#i-bot"/></svg></div>
+    <div class="msg-body">
+      <div class="bubble bubble-assistant md"></div>
+      <div class="msg-actions">
+        <button type="button" class="pill copy-btn" title="Copy">
+          <svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg>
+          <span>Copy</span>
+        </button>
+        <button type="button" class="pill insert-btn" title="Insert this answer into the message box">
+          <svg class="icon" aria-hidden="true"><use href="#i-corner-down-left"/></svg>
+          <span>Insert</span>
+        </button>
+        <button type="button" class="pill sources-btn hidden">
+          <span class="sources-label"></span>
+          <svg class="icon chevron" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+        </button>
+      </div>
+      <div class="sources hidden"></div>
+      <a class="btn btn-warn btn-sm upload-link hidden" href="/upload">
+        <svg class="icon" aria-hidden="true"><use href="#i-file-up"/></svg>
+        Upload a resume PDF
+      </a>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-thinking">
+  <div class="msg msg-assistant thinking" role="status" aria-live="polite">
+    <div class="avatar"><svg class="icon" aria-hidden="true"><use href="#i-bot"/></svg></div>
+    <div class="bubble bubble-assistant thinking-bubble">
+      <div class="thinking-row">
+        <span class="dots" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
+        <span class="thinking-label">Working on your resume</span>
+        <span class="thinking-elapsed">0s</span>
+      </div>
+      <p class="thinking-hint hidden">Local CPU models can take a few minutes — hang tight, it is still working.</p>
+    </div>
+  </div>
+</template>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/js/chat.js"></script>
+{% endblock %}
