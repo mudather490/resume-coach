@@ -38,7 +38,8 @@ def _fail(e: Exception):
                     "2. Or lower the output size:  OLLAMA_NUM_PREDICT=512\n"
                     f"3. Or pull a smaller model and set OLLAMA_CHAT_MODEL "
                     f"(e.g. ollama pull llama3.2:1b)\n"
-                    "4. Or switch provider:  LLM_PROVIDER=gemini  +  GEMINI_API_KEY=your_key"
+                    "4. Or switch provider:  LLM_PROVIDER=groq  +  GROQ_API_KEY=your_key"
+                    "  (or LLM_PROVIDER=gemini + GEMINI_API_KEY)"
                 ),
             )
         raise HTTPException(
@@ -48,7 +49,8 @@ def _fail(e: Exception):
                 "1. Start it:  ollama serve\n"
                 "2. Make sure the models exist:  ollama list  (pull with "
                 f"\"ollama pull {OLLAMA_CHAT_MODEL}\")\n"
-                "3. Or switch provider in backend/.env:  LLM_PROVIDER=gemini  +  GEMINI_API_KEY=your_key"
+                "3. Or switch provider in backend/.env:  LLM_PROVIDER=groq  +  "
+                "GROQ_API_KEY=your_key  (or LLM_PROVIDER=gemini + GEMINI_API_KEY)"
             ),
         )
 

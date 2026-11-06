@@ -13,10 +13,29 @@ OLLAMA_CHAT_MODEL = os.getenv("OLLAMA_CHAT_MODEL", "llama3.2:3b")
 OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "1200"))
 OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
 OLLAMA_NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "1024"))
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower()  # ollama | gemini
+# Chat provider: ollama (local) | groq (hosted) | gemini (hosted).
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
-GEMINI_EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", "text-embedding-004")
+# Gemini Embedding 1. Only used by backend.llm.embed(), which the current
+# whole-resume chat path does not call; kept ready for retrieval features.
+GEMINI_EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", "gemini-embedding-001")
+
+# Groq is OpenAI-compatible and hosts Qwen. The 27B model is a preview model,
+# so the ID stays configurable in case Groq changes it.
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_CHAT_MODEL = os.getenv("GROQ_CHAT_MODEL", "qwen/qwen3.8-27b")
+GROQ_TIMEOUT = float(os.getenv("GROQ_TIMEOUT", "120"))
+GROQ_MAX_TOKENS = int(os.getenv("GROQ_MAX_TOKENS", "4096"))
+# "none" keeps Qwen 3.8 in instruct mode: fast, direct answers without a long
+# hidden reasoning phase. Use low/medium/high for harder reasoning tasks.
+GROQ_REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "none").lower()
+
+# Embeddings are independent of the chat provider, so Groq can answer while
+# Gemini produces vectors.
+EMBED_PROVIDER = os.getenv(
+    "EMBED_PROVIDER", "gemini" if GEMINI_API_KEY else "ollama"
+).lower()
 
 # Local state (active resume JSON + sessions SQLite).
 # Kept as CHROMA_PATH for backwards compatibility with existing installs: the

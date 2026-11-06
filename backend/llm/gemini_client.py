@@ -13,7 +13,7 @@ def _fail(e: Exception):
     hint = ""
     if status in (400, 403, 404):
         hint = (
-            " Check your GEMINI_API_KEY, model name"
+            " Check your GEMINI_API_KEY and model names"
             f" (chat: {GEMINI_CHAT_MODEL}, embed: {GEMINI_EMBED_MODEL}) and"
             " that the key has access to the Generative Language API."
         )
@@ -26,8 +26,9 @@ def _check_config():
     if not GEMINI_API_KEY:
         raise HTTPException(
             status_code=503,
-            detail="LLM_PROVIDER=gemini but GEMINI_API_KEY is not set. "
-                   "Get a key at https://aistudio.google.com/apikey and add it to backend/.env",
+            detail="GEMINI_API_KEY is not set. "
+                   "Get a key at https://aistudio.google.com/apikey and add it to the "
+                   "environment (backend/.env locally, Project Settings on Vercel).",
         )
 
 def embed(texts: list[str]) -> list[list[float]]:

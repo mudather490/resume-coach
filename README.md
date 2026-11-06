@@ -1,4 +1,4 @@
-# Resume Coach — one FastAPI app (Ollama local · Gemini hosted)
+# Resume Coach — one FastAPI app (Ollama local · Groq + Gemini hosted)
 
 A PDF **resume** chatbot: upload your resume/CV, then chat with a coach that
 reviews/develops it, expands its content, or shortens it. Anything unrelated to
@@ -10,7 +10,7 @@ process**. There is no Node.js build and no separate frontend service.
 ## Prerequisites
 
 1. **Python 3.10+**
-2. **Ollama** — https://ollama.com (optional if you use Gemini instead)
+2. **Ollama** — https://ollama.com (optional if you use Groq or Gemini instead)
 3. No Node.js required
 
 ## Pull Ollama models (run once in PowerShell, for local Ollama)
@@ -60,7 +60,7 @@ FastAPI (one process)
    ├── JSON API        /ingest  /chat  /sessions  /health
    ├── PDF pipeline    pypdf → resume gate → chunks → active resume
    ├── Coach logic     guardrails + prompts + intent routing
-   ├── LLM             Ollama (local) / Gemini (hosted)
+   ├── LLM             Ollama (local) / Groq or Gemini (hosted)
    └── Storage         JSON file + SQLite  |  Upstash Redis on Vercel
 ```
 
@@ -98,23 +98,39 @@ FastAPI (one process)
   quantified achievements, no invented facts (missing numbers become
   `[placeholders]`), ATS-friendly formatting.
 
-## LLM providers: local = Ollama · hosted = Gemini
+## LLM providers: local = Ollama · hosted = Groq chat + Gemini embeddings
 
 Local development uses **Ollama** by default.
 
-On a hosted server, set:
+On a hosted server (Vercel), the recommended setup is **Groq for chat** and
+**Gemini Embedding 1** for embeddings:
 
-- `LLM_PROVIDER=gemini`
-- `GEMINI_API_KEY=your_key` (free: https://aistudio.google.com/apikey)
-- Optional: `GEMINI_CHAT_MODEL` (default `gemini-2.5-flash`),
-  `GEMINI_EMBED_MODEL`
+- `LLM_PROVIDER=groq`
+- `GROQ_API_KEY=your_key` (https://console.groq.com/keys)
+- `GROQ_CHAT_MODEL=qwen/qwen3.8-27b` (default; this is a Groq **Preview**
+  model, so it can be renamed or retired — the ID is configurable)
+- Optional: `GROQ_MAX_TOKENS` (default `4096`), `GROQ_TIMEOUT` (default `120`),
+  `GROQ_REASONING_EFFORT` (default `none` = instruct mode; `low`/`medium`/
+  `high` enable thinking mode; leave it empty for a non-reasoning model)
+- `GEMINI_API_KEY=your_key` (https://aistudio.google.com/apikey)
+- `EMBED_PROVIDER=gemini`
+- `GEMINI_EMBED_MODEL=gemini-embedding-001` (Gemini Embedding 1)
 
-Two conveniences:
+Gemini can also be the chat provider instead: `LLM_PROVIDER=gemini` +
+`GEMINI_API_KEY`, with `GEMINI_CHAT_MODEL` (default `gemini-2.5-flash`).
+
+> **Embeddings today:** chat sends the whole active resume as context, so
+> `embed()` is not called on the upload or chat path. The Gemini embedding
+> settings are wired and validated, but they only affect answers once vector
+> retrieval is added. Uploads do not require an embedding call.
+
+Conveniences:
 
 - **Auto-fallback**: with `LLM_PROVIDER=ollama` locally, if Ollama is not
-  running and a `GEMINI_API_KEY` is set, the backend silently uses Gemini.
-- **Self-diagnostics**: `GET /health` reports the active provider, whether
-  Ollama is reachable, and whether a Gemini key is configured.
+  running the backend tries Groq first (when a Groq key is set), then Gemini.
+- **Self-diagnostics**: `GET /health` reports `chat_provider`,
+  `embed_provider`, which keys are set, the Groq model, the Gemini embedding
+  model, and whether Ollama is reachable.
 - **Slow CPU-only machines**: a full-resume review of `llama3.2:3b` on CPU can
   take several minutes. Tune in `backend/.env`:
   - `OLLAMA_TIMEOUT` (default `1200` seconds)
@@ -146,7 +162,7 @@ JSON API (kept for scripts, tests and future clients):
 | `GET /sessions` | List sessions |
 | `GET /sessions/{id}` | Messages (assistant messages include rendered `html`) |
 | `DELETE /sessions/{id}` | Delete a session |
-| `GET /health` | Provider / Ollama / Gemini status |
+| `GET /health` | Provider diagnostics (chat/embed provider, models, keys) |
 
 ## Deploying to Vercel (one service)
 
@@ -160,12 +176,28 @@ function.
 4. Deploy.
 
 Then set these environment variables (Project → Settings → Environment
-Variables):
+Variables), then redeploy:
 
-- `LLM_PROVIDER=gemini`
+Required for Groq chat:
+
+- `LLM_PROVIDER=groq`
+- `GROQ_API_KEY=your_key`
+- `GROQ_CHAT_MODEL=qwen/qwen3.8-27b` (or another model from
+  https://console.groq.com/docs/models)
+
+For Gemini embeddings:
+
 - `GEMINI_API_KEY=your_key`
-- Optional: `MAX_UPLOAD_MB=4` (Vercel caps request bodies at 4.5 MB)
-- Optional: `GEMINI_CHAT_MODEL` (default `gemini-2.5-flash`)
+- `EMBED_PROVIDER=gemini`
+- `GEMINI_EMBED_MODEL=gemini-embedding-001`
+
+Optional:
+
+- `MAX_UPLOAD_MB=4` (Vercel caps request bodies at 4.5 MB)
+- `GROQ_MAX_TOKENS=4096`, `GROQ_TIMEOUT=120`, `GROQ_REASONING_EFFORT=none`
+
+Alternatively use Gemini for chat too: `LLM_PROVIDER=gemini` +
+`GEMINI_API_KEY`, with `GEMINI_CHAT_MODEL` (default `gemini-2.5-flash`).
 
 ### Persistent storage (Upstash Redis)
 
@@ -184,7 +216,9 @@ storage and asks you to re-upload after the function goes cold.
 ### Verify
 
 - `https://<your-app>.vercel.app/` renders the home page.
-- `https://<your-app>.vercel.app/health` reports `"active_provider": "gemini"`.
+- `https://<your-app>.vercel.app/health` reports `"chat_provider": "groq"`,
+  `"embed_provider": "gemini"`, `"groq_key_set": true`, and
+  `"groq_model": "qwen/qwen3.8-27b"`.
 - `/upload` and `/chat` work; `/static/css/app.css` is served.
 - Upload a PDF, then chat.
 
@@ -199,15 +233,18 @@ The root `Dockerfile` builds the same single FastAPI app:
 ```powershell
 docker build -t resume-coach .
 docker run -p 8000:8000 `
-  -e LLM_PROVIDER=gemini `
+  -e LLM_PROVIDER=groq `
+  -e GROQ_API_KEY=your_key `
   -e GEMINI_API_KEY=your_key `
+  -e EMBED_PROVIDER=gemini `
   -v resume_data:/data `
   resume-coach
 ```
 
 Mount a volume at `/data` and keep:
 
-- `LLM_PROVIDER=gemini`, `GEMINI_API_KEY`
+- `LLM_PROVIDER=groq`, `GROQ_API_KEY` (or `LLM_PROVIDER=gemini`, `GEMINI_API_KEY`)
+- `GEMINI_API_KEY`, `EMBED_PROVIDER=gemini`, `GEMINI_EMBED_MODEL=gemini-embedding-001`
 - `DATA_DIR=/data`
 - `SESSIONS_DB_PATH=/data/sessions.db`
 
@@ -221,6 +258,14 @@ Open `http://localhost:8000` (or your host URL).
 - **Ollama errors** — run `ollama list` and make sure `OLLAMA_CHAT_MODEL`
   exists. The app now surfaces the provider's real error (missing model,
   timeout, …) in the chat bubble.
+- **Groq errors** — `401` means `GROQ_API_KEY` is wrong; `404` means
+  `GROQ_CHAT_MODEL` is unavailable (Qwen 3.8 27B is a preview model and may be
+  renamed/retired); `429` is the Groq rate limit. Check `/health` for
+  `chat_provider` and `groq_model`.
+- **"No LLM provider is available" on Vercel** — environment variables must be
+  set in Project → Settings → Environment Variables, not in a local
+  `backend/.env`; redeploy after adding `LLM_PROVIDER=groq` and
+  `GROQ_API_KEY`.
 - **Uploads rejected** — the file must be a resume/CV PDF. The guard checks
   headings, contact details, education and date ranges.
 - **Vercel cold starts lose the resume** — connect Upstash Redis; Vercel's
@@ -243,7 +288,7 @@ backend/
   ingest/router.py        PDF upload + status/reset
   sessions/               Session storage + endpoints
   db/store.py             Active resume (file / Upstash Redis)
-  llm/                    Ollama and Gemini clients with fallback
+  llm/                    Ollama, Groq and Gemini clients with fallback
   resume/                 Guardrails and prompts
 run_backend.py            Windows-safe launcher
 Dockerfile                Single-image deployment
