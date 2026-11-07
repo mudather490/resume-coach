@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException
 
-from backend.config import REVIEW_CONTEXT_CHARS
+from backend.config import ATTACHMENT_CONTEXT_CHARS, REVIEW_CONTEXT_CHARS
 from backend.llm import chat
-from backend.db.store import get_active_doc, get_document_chunks
+from backend.db.store import get_active_doc, get_attachments, get_document_chunks
 from backend.sessions.store import create_session, add_message, get_session
 from backend.models.schemas import ChatRequest, ChatResponse
 from backend.resume.prompts import (
@@ -31,16 +31,77 @@ MAX_HISTORY_MESSAGES = 20
 VALID_INTENTS = set(INTENT_TASKS.keys()) | {"auto"}
 
 
-def _full_resume_context(active: dict) -> str:
+def _attachment_text(attachment: dict) -> str:
+    chunks = attachment.get("chunks")
+    if not isinstance(chunks, list):
+        return ""
+    return "\n".join(c.get("text", "") for c in chunks if c.get("text"))
+
+
+def _build_context(active: dict) -> str:
+    """Resume text plus optional supporting documents, within one budget.
+
+    The resume keeps priority: when supporting documents are present they get
+    at most ATTACHMENT_CONTEXT_CHARS, and the resume gets the rest of
+    REVIEW_CONTEXT_CHARS. This keeps the combined prompt inside the model
+    window on local Ollama installs.
+    """
     chunks = active.get("chunks")
     if not isinstance(chunks, list) or not chunks:
         chunks = get_document_chunks(active["doc_id"])
-    parts = []
+
+    resume_parts = []
     for c in chunks:
         page = c.get("page")
         label = f"[Resume page {page}] " if page is not None else ""
-        parts.append(f"{label}{c.get('text', '')}")
+        resume_parts.append(f"{label}{c.get('text', '')}")
+    resume_text = "\n\n".join(resume_parts)
+
+    attachments = get_attachments(active)
+    attachment_budget = ATTACHMENT_CONTEXT_CHARS if attachments else 0
+    resume_budget = max(0, REVIEW_CONTEXT_CHARS - attachment_budget)
+    parts = [f"RESUME CONTEXT:\n{resume_text[:resume_budget]}"]
+
+    if attachments:
+        used = 0
+        doc_parts = []
+        for attachment in attachments:
+            text = _attachment_text(attachment)
+            if not text:
+                continue
+            remaining = ATTACHMENT_CONTEXT_CHARS - used
+            if remaining <= 0:
+                break
+            snippet = text[:remaining]
+            used += len(snippet)
+            name = attachment.get("filename") or attachment.get("id") or "document"
+            doc_parts.append(f"SUPPORTING DOCUMENT: {name}\n{snippet}")
+        if doc_parts:
+            parts.append("SUPPORTING DOCUMENTS:\n\n" + "\n\n".join(doc_parts))
+
     return "\n\n".join(parts)[:REVIEW_CONTEXT_CHARS]
+
+
+def _context_sources(active: dict) -> list[dict]:
+    """One source chip for the resume plus one per supporting document."""
+    sources = [
+        {
+            "doc_id": active.get("filename") or active["doc_id"],
+            "page": None,
+            "score": 1.0,
+            "kind": "resume",
+        }
+    ]
+    for attachment in get_attachments(active):
+        sources.append(
+            {
+                "doc_id": attachment.get("filename") or attachment.get("id"),
+                "page": None,
+                "score": 1.0,
+                "kind": "attachment",
+            }
+        )
+    return sources
 
 
 @router.post("", response_model=ChatResponse)
@@ -66,11 +127,11 @@ async def chat_endpoint(req: ChatRequest):
     else:
         intent = req.intent if req.intent and req.intent != "auto" else classify_intent(req.message)
 
-        # One active resume: use the whole document as context. This is both
-        # more accurate for review/expand/shorten and avoids a slow embedding
-        # round-trip on every message.
-        context = _full_resume_context(active)
-        sources = [{"doc_id": active["doc_id"], "page": None, "score": 1.0}]
+        # One active resume plus its supporting documents: use the whole text
+        # as context. This is both more accurate for review/expand/shorten/
+        # build and avoids a slow embedding round-trip on every message.
+        context = _build_context(active)
+        sources = _context_sources(active)
 
         if intent == "general" and asks_about_missing_fact(req.message, context):
             answer = NOT_IN_RESUME_ANSWER

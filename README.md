@@ -1,8 +1,9 @@
 # Resume Coach — one FastAPI app (Ollama local · Groq + Gemini hosted)
 
-A PDF **resume** chatbot: upload your resume/CV, then chat with a coach that
-reviews/develops it, expands its content, or shortens it. Anything unrelated to
-resumes is declined.
+A PDF **resume** chatbot: upload your resume/CV, optionally add supporting PDFs
+(project notes, portfolio, certificates), then chat with a coach that
+reviews/develops the resume, expands or shortens its content, and can build a
+new resume from all the files. Anything unrelated to resumes is declined.
 
 The whole product — pages, static assets and JSON API — runs in **one FastAPI
 process**. There is no Node.js build and no separate frontend service.
@@ -64,12 +65,13 @@ FastAPI (one process)
    └── Storage         JSON file + SQLite  |  Upstash Redis on Vercel
 ```
 
-- **One active resume** is stored as JSON in `DATA_DIR` (`./chroma_db` locally,
-  `/tmp/data` on Vercel) or in Upstash Redis when its REST env vars exist.
+- **One active resume** plus its optional **supporting documents** are stored as
+  JSON in `DATA_DIR` (`./chroma_db` locally, `/tmp/data` on Vercel) or in Upstash
+  Redis when its REST env vars exist.
 - **Sessions** live in `sessions.db` (SQLite) locally, or Upstash Redis on
   Vercel.
-- Chat sends the whole active resume as context, so no vector index or
-  embedding call is needed.
+- Chat sends the whole active resume plus its supporting documents as context,
+  so no vector index or embedding call is needed.
 - Assistant Markdown is rendered **server-side in Python** (`markdown-it-py`,
   raw HTML disabled) and returned as `answer_html`, so the browser needs no
   Markdown library.
@@ -81,18 +83,22 @@ FastAPI (one process)
 - **Upload gate** — `backend/resume/guardrails.py::is_resume_document_fast`
   checks extracted PDF text (section headings, contact info, education tokens,
   date ranges vs. paper/invoice markers). Non-resume PDFs are rejected with
-  HTTP 400.
-- **Grounded answers** — the coach reads the whole active resume. Questions
-  about facts that aren't in the resume return `kind: "not_found"`; with no
-  resume uploaded it returns `kind: "no_resume"`.
-- **Blank start** — `/chat` always opens a fresh conversation with the three
-  mode cards; earlier conversations stay under **Past chats**.
+  HTTP 400. Only the primary resume goes through this gate.
+- **Supporting documents** — optional PDFs (project notes, portfolio,
+  certificates, even another resume version) can be added next to the resume.
+  They are parsed and stored as text in the same active record. The coach uses
+  them to enrich reviews and to build a complete new resume on request.
+- **Grounded answers** — the coach reads the whole active resume plus its
+  supporting documents. Questions about facts that aren't in either return
+  `kind: "not_found"`; with no resume uploaded it returns `kind: "no_resume"`.
+- **Blank start** — `/chat` always opens a fresh conversation with the mode
+  cards; earlier conversations stay under **Past chats**.
 - **Chat gate** — `is_resume_related` screens every message: a keyword
   allow/deny screen in Python first; ambiguous messages go to a one-letter LLM
   classifier. Off-topic requests get a "resume coach only" refusal and skip
   retrieval entirely.
 - **Intent routing** — `classify_intent` maps messages to `review`, `expand`,
-  `shorten` or `general`. The UI's quick actions send explicit intents.
+  `shorten`, `build` or `general`. The UI's quick actions send explicit intents.
 - **Coaching rules** — `backend/resume/prompts.py` encodes professional
   standards: Action + Context + Result / STAR bullets, strong action verbs,
   quantified achievements, no invented facts (missing numbers become
@@ -119,10 +125,11 @@ On a hosted server (Vercel), the recommended setup is **Groq for chat** and
 Gemini can also be the chat provider instead: `LLM_PROVIDER=gemini` +
 `GEMINI_API_KEY`, with `GEMINI_CHAT_MODEL` (default `gemini-2.5-flash`).
 
-> **Embeddings today:** chat sends the whole active resume as context, so
-> `embed()` is not called on the upload or chat path. The Gemini embedding
-> settings are wired and validated, but they only affect answers once vector
-> retrieval is added. Uploads do not require an embedding call.
+> **Embeddings today:** chat sends the whole active resume and supporting
+> documents as context, so `embed()` is not called on the upload or chat path.
+> The Gemini embedding settings are wired and validated, but they only affect
+> answers once vector retrieval is added. Uploads do not require an embedding
+> call.
 
 Conveniences:
 
@@ -153,10 +160,12 @@ JSON API (kept for scripts, tests and future clients):
 
 | Route | Purpose |
 | --- | --- |
-| `POST /ingest` | Upload a resume PDF (non-resumes rejected; replaces the active resume) |
-| `GET /ingest/status` | Active resume filename/chunk count, or `has_resume: false` |
-| `DELETE /ingest/reset` | Clear the active resume |
-| `POST /chat` | Talk to the coach. Optional `intent`: `review \| expand \| shorten \| general \| auto`. Response includes `kind` (`answer \| refusal \| no_resume \| not_found`) and `answer_html` |
+| `POST /ingest` | Upload a resume PDF (non-resumes rejected; replaces the active resume, keeps supporting documents) |
+| `POST /ingest/attachments` | Add an optional supporting PDF (project notes, portfolio, certificates) |
+| `DELETE /ingest/attachments/{id}` | Remove one supporting PDF |
+| `GET /ingest/status` | Active resume filename/chunk count plus supporting documents, or `has_resume: false` |
+| `DELETE /ingest/reset` | Clear the active resume and all supporting documents |
+| `POST /chat` | Talk to the coach. Optional `intent`: `review \| expand \| shorten \| build \| general \| auto`. Response includes `kind` (`answer \| refusal \| no_resume \| not_found`) and `answer_html` |
 | `GET /chat/{session_id}` | Conversation history (JSON) |
 | `POST /sessions` | Create a session |
 | `GET /sessions` | List sessions |
@@ -194,6 +203,7 @@ For Gemini embeddings:
 Optional:
 
 - `MAX_UPLOAD_MB=4` (Vercel caps request bodies at 4.5 MB)
+- `MAX_ATTACHMENTS=3`, `MAX_ATTACHMENT_TEXT_CHARS=30000`, `ATTACHMENT_CONTEXT_CHARS=6000`
 - `GROQ_MAX_TOKENS=4096`, `GROQ_TIMEOUT=120`, `GROQ_REASONING_EFFORT=none`
 
 Alternatively use Gemini for chat too: `LLM_PROVIDER=gemini` +
@@ -266,8 +276,10 @@ Open `http://localhost:8000` (or your host URL).
   set in Project → Settings → Environment Variables, not in a local
   `backend/.env`; redeploy after adding `LLM_PROVIDER=groq` and
   `GROQ_API_KEY`.
-- **Uploads rejected** — the file must be a resume/CV PDF. The guard checks
-  headings, contact details, education and date ranges.
+- **Resume upload rejected** — the primary resume must be a resume/CV PDF. The
+  guard checks headings, contact details, education and date ranges. Other PDFs
+  belong under **Supporting documents** on `/upload`, which skips the resume
+  guard.
 - **Vercel cold starts lose the resume** — connect Upstash Redis; Vercel's
   filesystem is ephemeral.
 - **CORS** — no longer needed: UI and API are the same origin. If you call the
@@ -283,9 +295,9 @@ backend/
     routes.py             HTML page routes + Jinja filters
     markdown.py           Python Markdown rendering / plain-text stripping
   templates/              base, home, upload, chat, icon sprite
-  static/                 app.css, api.js, upload.js, chat.js
+  static/                 app.css, api.js, upload.js, attachments.js, chat.js
   chat/router.py          Coach endpoint
-  ingest/router.py        PDF upload + status/reset
+  ingest/router.py        PDF upload, supporting documents, status/reset
   sessions/               Session storage + endpoints
   db/store.py             Active resume (file / Upstash Redis)
   llm/                    Ollama, Groq and Gemini clients with fallback

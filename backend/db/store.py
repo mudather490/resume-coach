@@ -132,6 +132,64 @@ def chunk_count(meta: Optional[Dict]) -> int:
     return int(meta.get("chunk_count") or 0)
 
 
+# --------------------------------------------------------------------------- #
+# Supporting documents (optional PDFs attached to the active resume)
+# --------------------------------------------------------------------------- #
+def _attachment_summary(attachment: Dict) -> Dict:
+    return {
+        "id": attachment.get("id") or attachment.get("filename") or "",
+        "filename": attachment.get("filename") or attachment.get("id") or "document",
+        "chunks": chunk_count(attachment),
+        "uploaded_at": attachment.get("uploaded_at"),
+        "size_bytes": attachment.get("size_bytes"),
+        "truncated": bool(attachment.get("truncated", False)),
+    }
+
+
+def get_attachments(meta: Optional[Dict] = None) -> List[Dict]:
+    """Supporting documents attached to the active resume."""
+    if meta is None:
+        meta = get_active_doc()
+    if not meta:
+        return []
+    attachments = meta.get("attachments")
+    return attachments if isinstance(attachments, list) else []
+
+
+def attachment_summaries(meta: Optional[Dict] = None) -> List[Dict]:
+    return [_attachment_summary(a) for a in get_attachments(meta)]
+
+
+def add_attachment(attachment: Dict) -> Dict:
+    """Append one supporting document to the active resume record."""
+    meta = get_active_doc()
+    if not meta:
+        raise ValueError("No active resume")
+    attachments = meta.get("attachments")
+    if not isinstance(attachments, list):
+        attachments = []
+    attachments.append(attachment)
+    meta["attachments"] = attachments
+    set_active_doc(meta)
+    return meta
+
+
+def remove_attachment(attachment_id: str) -> bool:
+    """Remove a supporting document by id. Returns True when it existed."""
+    meta = get_active_doc()
+    if not meta:
+        return False
+    attachments = meta.get("attachments")
+    if not isinstance(attachments, list):
+        return False
+    remaining = [a for a in attachments if a.get("id") != attachment_id]
+    if len(remaining) == len(attachments):
+        return False
+    meta["attachments"] = remaining
+    set_active_doc(meta)
+    return True
+
+
 def active_resume_status() -> Dict:
     """Summary shared by the status endpoint and the HTML pages."""
     meta = get_active_doc()
@@ -143,7 +201,10 @@ def active_resume_status() -> Dict:
             "chunks": 0,
             "uploaded_at": None,
             "indexed": False,
+            "attachments": [],
+            "attachment_count": 0,
         }
+    attachments = attachment_summaries(meta)
     return {
         "has_resume": True,
         "doc_id": meta.get("doc_id"),
@@ -151,6 +212,8 @@ def active_resume_status() -> Dict:
         "chunks": chunk_count(meta),
         "uploaded_at": meta.get("uploaded_at"),
         "indexed": bool(meta.get("indexed", True)),
+        "attachments": attachments,
+        "attachment_count": len(attachments),
     }
 
 

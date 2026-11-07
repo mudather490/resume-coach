@@ -22,6 +22,10 @@ ALLOW_RE = re.compile(
     r"|internship|work\s+position|employers?|job\s+titles?"
     r"|(?:skills?|experience|education|summary)\s+(?:section|part|\blist\b)"
     r"|one\s*[-\s]?page|ats[- ]friendly|linkedin\s+profile|employment\s+(?:gap|history)"
+    r"|supporting\s+(?:document|doc|file|pdf)s?"
+    r"|attachments?"
+    r"|project\s+(?:file|doc|document|pdf|notes?)"
+    r"|portfolio|certificates?|projects?"
     r")\b",
     re.I,
 )
@@ -73,10 +77,20 @@ INTENT_EXPAND_RE = re.compile(
     r"add\s+(?:more\s+)?detail|extend|amplify|develop\s+more|write\s+more|bulk\s+up)\b",
     re.I,
 )
+INTENT_BUILD_RE = re.compile(
+    r"\b(?:build|create|generate|draft|produce|assemble|rebuild)\b.{0,40}\b(?:a\s+)?"
+    r"(?:new\s+|fresh\s+|complete\s+|full\s+)?resume\b"
+    r"|\bmake\s+(?:me\s+)?(?:a\s+)?(?:new|fresh|complete|full)\s+resume\b"
+    r"|\b(?:new|fresh|complete|full)\s+resume\b"
+    r"|\bresume\s+from\s+scratch\b"
+    r"|\brewrite\s+(?:my\s+)?(?:whole\s+|entire\s+)?resume\b",
+    re.I,
+)
 INTENT_REVIEW_RE = re.compile(
     r"\b(review|feedback|critique|criticize|assess|evaluation?|improve|improvements?|"
     r"suggest(?:ion)?s?|recommend(?:ations?)?|polish|stronger|make\s+(?:it|this)\s+better|"
-    r"develop(?:ment)?|upgrade|refine|revise|fix|tailor(?:ing)?|proofread|best\s+practices?)\b",
+    r"develop(?:ment)?|upgrade|refine|revise|fix|tailor(?:ing)?|proofread|best\s+practices?|"
+    r"make\s+(?:my\s+)?resume\s+better)\b",
     re.I,
 )
 
@@ -295,12 +309,14 @@ def is_resume_related(message: str, history: list | None = None) -> bool:
 
 
 def classify_intent(message: str) -> str:
-    """review | expand | shorten | general — matches the coach's services."""
+    """review | expand | shorten | build | general — matches the coach's services."""
     text = message
     if INTENT_SHORTEN_RE.search(text):
         return "shorten"
     if INTENT_EXPAND_RE.search(text):
         return "expand"
+    if INTENT_BUILD_RE.search(text):
+        return "build"
     if INTENT_REVIEW_RE.search(text):
         return "review"
     return "general"

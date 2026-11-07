@@ -6,8 +6,8 @@
   <div class="page-head">
     <h1>Upload your resume</h1>
     <p>
-      Resume/CV PDFs only — other documents are rejected. A new upload replaces
-      the current resume immediately.
+      Add your resume/CV PDF. Optionally add supporting PDFs — project notes,
+      portfolio, certificates — and the coach can use them to build a stronger resume.
     </p>
   </div>
 
@@ -16,7 +16,9 @@
     <div class="active-card-body">
       <p id="active-resume-name" class="active-card-name">{{ resume.filename or "" }}</p>
       <p class="active-card-meta">
-        Active resume · <span id="active-resume-chunks">{{ resume.chunks }}</span> chunks.
+        Active resume · <span id="active-resume-chunks">{{ resume.chunks }}</span> chunks ·
+        <span id="active-attachment-count">{{ resume.attachment_count or 0 }}</span>
+        supporting <span id="active-attachment-word">doc{{ '' if (resume.attachment_count or 0) == 1 else 's' }}</span>.
         Uploading a new PDF replaces it.
       </p>
     </div>
@@ -73,9 +75,64 @@
       <span id="upload-submit-label">Save resume</span>
     </button>
   </form>
+
+  <section class="supporting" aria-labelledby="supporting-title">
+    <div class="supporting-head">
+      <h2 id="supporting-title">Supporting documents <span class="muted">(optional)</span></h2>
+      <p class="muted">
+        Project notes, portfolio, certificates — PDF only. The coach can use them
+        when reviewing or building a new resume.
+      </p>
+    </div>
+
+    <div id="attachment-dropzone" class="dropzone dropzone-compact" role="button" tabindex="0"
+         aria-label="Add supporting PDFs" data-max-files="{{ max_attachments }}">
+      <input id="attachment-input" class="visually-hidden" type="file" accept=".pdf,application/pdf" multiple>
+      <div class="dropzone-empty">
+        <div class="dropzone-icon"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></div>
+        <div>
+          <p class="dropzone-title">Drop supporting PDFs here, or <span>browse</span></p>
+          <p class="dropzone-hint">PDF only · up to {{ max_attachments }} files · max {{ max_upload_mb }} MB each</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="attachment-error" class="alert alert-error hidden" role="alert">
+      <svg class="icon" aria-hidden="true"><use href="#i-alert-circle"/></svg>
+      <div><p id="attachment-error-text"></p></div>
+    </div>
+
+    <div id="attachment-empty" class="attachment-empty {% if resume.attachments %}hidden{% endif %}">
+      No supporting documents yet.
+    </div>
+
+    <ul id="attachment-list" class="attachment-list {% if not resume.attachments %}hidden{% endif %}">
+      {% for a in resume.attachments %}
+      <li class="attachment-row" data-id="{{ a.id }}">
+        <div class="file-badge"><svg class="icon" aria-hidden="true"><use href="#i-file-text"/></svg></div>
+        <div class="attachment-info">
+          <p class="attachment-name">{{ a.filename }}</p>
+          <p class="attachment-meta">
+            {{ a.chunks }} chunk{{ '' if a.chunks == 1 else 's' }}{% if a.truncated %} · shortened{% endif %}
+          </p>
+        </div>
+        <button type="button" class="icon-btn danger remove-attachment" data-id="{{ a.id }}"
+                aria-label="Remove {{ a.filename }}">
+          <svg class="icon" aria-hidden="true"><use href="#i-x"/></svg>
+        </button>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <button type="button" id="clear-attachments"
+            class="link-btn {% if not resume.attachments %}hidden{% endif %}">
+      Remove all supporting documents
+    </button>
+  </section>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script type="module" src="/static/js/upload.js"></script>
+<script type="module" src="/static/js/attachments.js"></script>
 {% endblock %}

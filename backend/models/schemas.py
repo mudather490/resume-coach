@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
 
@@ -13,6 +13,21 @@ class IngestResponse(BaseModel):
     filename: str
     chunks: int
 
+class AttachmentInfo(BaseModel):
+    id: str
+    filename: str
+    chunks: int = 0
+    uploaded_at: Optional[str] = None
+    size_bytes: Optional[int] = None
+    truncated: bool = False
+
+class AttachmentResponse(BaseModel):
+    id: str
+    filename: str
+    chunks: int
+    attachment_count: int
+    truncated: bool = False
+
 class IngestStatus(BaseModel):
     has_resume: bool
     doc_id: Optional[str] = None
@@ -20,6 +35,8 @@ class IngestStatus(BaseModel):
     chunks: int = 0
     uploaded_at: Optional[str] = None
     indexed: bool = False
+    attachments: List[AttachmentInfo] = Field(default_factory=list)
+    attachment_count: int = 0
 
 class ChatRequest(BaseModel):
     message: str

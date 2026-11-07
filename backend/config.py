@@ -54,6 +54,13 @@ BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "4" if ON_VERCEL else "10"))
 REVIEW_CONTEXT_CHARS = int(os.getenv("REVIEW_CONTEXT_CHARS", "24000"))
 
+# Optional supporting PDFs (project notes, portfolio, certificates) stored as
+# extracted text next to the active resume. Caps keep the JSON/Redis value small
+# and keep the combined chat context inside the model window.
+MAX_ATTACHMENTS = int(os.getenv("MAX_ATTACHMENTS", "3"))
+MAX_ATTACHMENT_TEXT_CHARS = int(os.getenv("MAX_ATTACHMENT_TEXT_CHARS", "30000"))
+ATTACHMENT_CONTEXT_CHARS = int(os.getenv("ATTACHMENT_CONTEXT_CHARS", "6000"))
+
 # Upstash Redis REST (auto-injected by the Vercel Marketplace integration).
 KV_REST_API_URL = (
     os.getenv("KV_REST_API_URL") or os.getenv("UPSTASH_REDIS_REST_URL") or ""

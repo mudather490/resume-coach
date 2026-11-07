@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from backend.config import MAX_UPLOAD_MB
+from backend.config import MAX_ATTACHMENTS, MAX_UPLOAD_MB
 from backend.db.store import active_resume_status
 from backend.sessions.store import list_sessions
 from backend.web.markdown import markdown_to_plain_text, render_markdown
@@ -25,6 +25,7 @@ def _context(request: Request, page: str, **extra) -> dict:
     return {
         "page": page,
         "max_upload_mb": MAX_UPLOAD_MB,
+        "max_attachments": MAX_ATTACHMENTS,
         **extra,
     }
 

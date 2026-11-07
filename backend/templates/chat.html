@@ -22,7 +22,13 @@
     <span id="resume-chip-name" class="truncate strong">{{ resume.filename or "" }}</span>
     <span class="dot-sep">·</span>
     <span id="resume-chip-chunks" class="muted">{{ resume.chunks }} chunks</span>
-    <a class="link ml-auto" href="/upload">Replace</a>
+    {% if resume.attachment_count %}
+    <span class="dot-sep">·</span>
+    <span class="muted">
+      {{ resume.attachment_count }} supporting doc{{ '' if resume.attachment_count == 1 else 's' }}
+    </span>
+    {% endif %}
+    <a class="link ml-auto" href="/upload">Manage</a>
   </div>
 
   <section id="history-panel" class="history hidden" aria-label="Conversation history">
@@ -53,14 +59,14 @@
         <div class="empty-icon"><svg class="icon" aria-hidden="true"><use href="#i-bot"/></svg></div>
         <div>
           <p class="empty-title">How should I work on your resume?</p>
-          <p class="empty-copy">Pick a mode to start. Your coach only uses the resume PDF you upload.</p>
+          <p class="empty-copy">Pick a mode to start. Your coach only uses the resume and supporting PDFs you upload.</p>
         </div>
 
         <div id="no-resume-card" class="alert alert-warn {% if resume.has_resume %}hidden{% endif %}">
           <svg class="icon" aria-hidden="true"><use href="#i-alert-circle"/></svg>
           <div>
             <p class="strong">No resume uploaded yet</p>
-            <p class="muted">Upload a PDF first, then review, expand, or shorten it.</p>
+            <p class="muted">Upload a PDF first, then review, expand, shorten, or build a new resume.</p>
             <a class="inline-link" href="/upload">
               <svg class="icon" aria-hidden="true"><use href="#i-file-up"/></svg>
               Upload resume
@@ -96,6 +102,15 @@
             </span>
             <svg class="icon chevron" aria-hidden="true"><use href="#i-chevron-right"/></svg>
           </button>
+          <button type="button" class="quick-action" data-intent="build"
+                  data-message="Build a new, complete resume from my current resume and the supporting documents I uploaded. Use my real facts and add [placeholders] for missing numbers.">
+            <span class="quick-icon"><svg class="icon" aria-hidden="true"><use href="#i-sparkles"/></svg></span>
+            <span class="quick-body">
+              <span class="quick-title">Build new resume</span>
+              <span class="quick-desc">Create a complete resume from your resume and supporting PDFs.</span>
+            </span>
+            <svg class="icon chevron" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+          </button>
         </div>
       </div>
     </div>
@@ -117,6 +132,11 @@
           <svg class="icon" aria-hidden="true"><use href="#i-minimize-2"/></svg>
           Shorten content
         </button>
+        <button type="button" class="chip quick-action" data-intent="build"
+                data-message="Build a new, complete resume from my current resume and the supporting documents I uploaded. Use my real facts and add [placeholders] for missing numbers.">
+          <svg class="icon" aria-hidden="true"><use href="#i-sparkles"/></svg>
+          Build new resume
+        </button>
       </div>
       <form id="chat-form" class="composer-row">
         <textarea id="message-input" rows="1" aria-label="Message the resume coach"
@@ -125,7 +145,7 @@
           <svg class="icon" aria-hidden="true"><use href="#i-send"/></svg>
         </button>
       </form>
-      <p class="composer-hint">Shift + Enter for a new line · Answers come only from your uploaded resume</p>
+      <p class="composer-hint">Shift + Enter for a new line · Answers come only from your uploaded resume and supporting PDFs</p>
     </div>
   </div>
 </div>
@@ -153,6 +173,10 @@
         <button type="button" class="pill insert-btn" title="Insert this answer into the message box">
           <svg class="icon" aria-hidden="true"><use href="#i-corner-down-left"/></svg>
           <span>Insert</span>
+        </button>
+        <button type="button" class="pill download-btn" title="Download this answer as Markdown">
+          <svg class="icon" aria-hidden="true"><use href="#i-file-text"/></svg>
+          <span>Download .md</span>
         </button>
         <button type="button" class="pill sources-btn hidden">
           <span class="sources-label"></span>

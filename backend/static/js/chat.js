@@ -205,6 +205,28 @@ if (page) {
         insertIntoInput(plain);
       });
 
+      const downloadButton = node.querySelector(".download-btn");
+      if (downloadButton) {
+        if (kind === "no_resume" || kind === "not_found") {
+          hide(downloadButton);
+        } else {
+          downloadButton.addEventListener("click", () => {
+            const markdown = text || plain || "";
+            const blob = new Blob([markdown], {
+              type: "text/markdown;charset=utf-8",
+            });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "resume.md";
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+          });
+        }
+      }
+
       if (sources && sources.length) {
         show(sourcesButton);
         sourcesButton.querySelector(
